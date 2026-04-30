@@ -64,3 +64,16 @@ CUDA_VISIBLE_DEVICES=0 python analyze-llama-kv-blocks.py <path-to-llama-7b-hf> \
 ```
 
 This script compares `per-tensor`, `per-block`, `per-token`, and `per-channel` quantization error, and also reports block homogeneity statistics such as block CV (`std(|x|) / mean(|x|)`). Lower block quantization error and lower block CV indicate that block-wise quantization is a better fit.
+
+## Analyze multiple layers
+
+To check whether the block-size conclusion is stable across many transformer layers, run:
+
+```
+CUDA_VISIBLE_DEVICES=0 python analyze-llama-kv-blocks-multilayer.py <path-to-llama-7b-hf> \
+  --seqlen 2048 \
+  --block-sizes 32 64 128 256 \
+  --output-dir block-analysis-multilayer
+```
+
+This script captures the requested layers in a single forward pass, writes per-layer CSVs, and also saves cross-layer aggregate summaries and plots.
