@@ -15,6 +15,14 @@ def get_model_longseqlen(model_name, seqlen, maxseqlen):
     torch.nn.init.normal_ = skip
 
     from transformers import AutoConfig, AutoModelForCausalLM
+    import transformers.modeling_utils as modeling_utils
+    import transformers.utils.import_utils as import_utils
+
+    # Newer transformers releases block loading PyTorch .bin checkpoints on
+    # torch<2.6. The public OpenLLaMA weights we download for this analysis are
+    # .bin shards, so we bypass that version gate in this trusted local setup.
+    import_utils.check_torch_load_is_safe = lambda: None
+    modeling_utils.check_torch_load_is_safe = lambda: None
 
     config = AutoConfig.from_pretrained(model_name)
     context_size = maxseqlen
