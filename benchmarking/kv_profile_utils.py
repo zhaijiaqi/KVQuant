@@ -6,6 +6,23 @@ from kvquant.datautils import get_loaders
 from kvquant.model_parse import get_layers, parse_model
 
 
+def get_attention_layout(attn_module):
+    config = attn_module.config
+    num_heads = getattr(attn_module, "num_heads", None)
+    if num_heads is None:
+        num_heads = getattr(config, "num_attention_heads")
+
+    num_key_value_heads = getattr(attn_module, "num_key_value_heads", None)
+    if num_key_value_heads is None:
+        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
+
+    head_dim = getattr(attn_module, "head_dim", None)
+    if head_dim is None:
+        head_dim = config.hidden_size // num_heads
+
+    return num_heads, num_key_value_heads, head_dim
+
+
 def get_model_longseqlen(model_name, seqlen, maxseqlen):
     def skip(*args, **kwargs):
         pass
@@ -44,12 +61,13 @@ def get_model_longseqlen(model_name, seqlen, maxseqlen):
 
 def project_qkv(attn_module, hidden_states):
     config = attn_module.config
+    num_heads, num_key_value_heads, head_dim = get_attention_layout(attn_module)
     if getattr(config, "pretraining_tp", 1) > 1:
         import torch.nn.functional as F
 
-        key_value_slicing = (attn_module.num_key_value_heads * attn_module.head_dim) // config.pretraining_tp
+        key_value_slicing = (num_key_value_heads * head_dim) // config.pretraining_tp
         query_slices = attn_module.q_proj.weight.split(
-            (attn_module.num_heads * attn_module.head_dim) // config.pretraining_tp,
+            (num_heads * head_dim) // config.pretraining_tp,
             dim=0,
         )
         key_slices = attn_module.k_proj.weight.split(key_value_slicing, dim=0)
@@ -166,6 +184,7 @@ def capture_layer_tensors(model, input_ids, layer_idx, dev):
 
         if not captured:
             bsz, q_len, _ = hidden_states.shape
+            num_heads, num_key_value_heads, head_dim = get_attention_layout(attn_module)
             if position_ids is None:
                 position_ids_local = torch.arange(q_len, device=hidden_states.device).unsqueeze(0)
             else:
@@ -173,18 +192,18 @@ def capture_layer_tensors(model, input_ids, layer_idx, dev):
 
             query_states, key_states_pre, value_states = project_qkv(attn_module, hidden_states)
 
-            query_states = query_states.view(bsz, q_len, attn_module.num_heads, attn_module.head_dim).transpose(1, 2)
+            query_states = query_states.view(bsz, q_len, num_heads, head_dim).transpose(1, 2)
             key_states = key_states_pre.view(
                 bsz,
                 q_len,
-                attn_module.num_key_value_heads,
-                attn_module.head_dim,
+                num_key_value_heads,
+                head_dim,
             ).transpose(1, 2)
             value_states = value_states.view(
                 bsz,
                 q_len,
-                attn_module.num_key_value_heads,
-                attn_module.head_dim,
+                num_key_value_heads,
+                head_dim,
             ).transpose(1, 2)
 
             kv_seq_len = key_states.shape[-2]
