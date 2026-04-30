@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from kv_profile_utils import load_wikitext_layer_tensors
+from kv_profile_utils import load_wikitext_layer_tensors, resolve_results_root
+
+RESULTS_ROOT = resolve_results_root(Path(__file__))
 
 EPS = 1e-8
 TENSOR_ORDER = ["k_pre_rope", "k_post_rope", "values"]
@@ -300,7 +302,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="block-analysis-layer10",
+        default=str(RESULTS_ROOT / "block-analysis-layer10"),
         help="Directory used to store JSON/CSV/PNG outputs.",
     )
     args = parser.parse_args()

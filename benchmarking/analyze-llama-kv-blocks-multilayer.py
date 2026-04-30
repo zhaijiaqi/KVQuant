@@ -9,7 +9,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from kv_profile_utils import load_wikitext_layers_tensors
+from kv_profile_utils import load_wikitext_layers_tensors, resolve_results_root
+
+RESULTS_ROOT = resolve_results_root(Path(__file__))
 
 TENSOR_ORDER = ["k_pre_rope", "k_post_rope", "values"]
 TENSOR_TITLES = {
@@ -334,7 +336,7 @@ def main():
     parser.add_argument("--block-sizes", type=int, nargs="+", default=[32, 64, 128, 256])
     parser.add_argument("--num-bits", type=int, default=4)
     parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--output-dir", type=str, default="block-analysis-multilayer")
+    parser.add_argument("--output-dir", type=str, default=str(RESULTS_ROOT / "block-analysis-multilayer"))
     args = parser.parse_args()
 
     block_sizes = sorted(set(args.block_sizes))

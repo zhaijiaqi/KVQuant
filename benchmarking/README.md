@@ -49,6 +49,7 @@ CUDA_VISIBLE_DEVICES=0 python profile-llama-kv-distribution.py <path-to-llama-7b
 ```
 
 This script saves both the aggregated tensors and a 3-panel figure for `Keys pre-RoPE`, `Keys post-RoPE`, and `Values`.
+By default, outputs are written to the top-level project `results/` directory when `kvquant` is used as a submodule; otherwise they are written to the current repo `results/` directory.
 
 ## Analyze per-block quantization
 
@@ -64,6 +65,7 @@ CUDA_VISIBLE_DEVICES=0 python analyze-llama-kv-blocks.py <path-to-llama-7b-hf> \
 ```
 
 This script compares `per-tensor`, `per-block`, `per-token`, and `per-channel` quantization error, and also reports block homogeneity statistics such as block CV (`std(|x|) / mean(|x|)`). Lower block quantization error and lower block CV indicate that block-wise quantization is a better fit.
+By default, outputs are written to the top-level project `results/` directory when `kvquant` is used as a submodule; otherwise they are written to the current repo `results/` directory.
 
 ## Analyze multiple layers
 
@@ -77,3 +79,4 @@ CUDA_VISIBLE_DEVICES=0 python analyze-llama-kv-blocks-multilayer.py <path-to-lla
 ```
 
 This script captures the requested layers in a single forward pass, writes per-layer CSVs, and also saves cross-layer aggregate summaries and plots.
+By default, outputs are written to the top-level project `results/` directory when `kvquant` is used as a submodule; otherwise they are written to the current repo `results/` directory.

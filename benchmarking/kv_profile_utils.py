@@ -1,9 +1,27 @@
 import math
+from pathlib import Path
 
 import torch
 
 from kvquant.datautils import get_loaders
 from kvquant.model_parse import get_layers, parse_model
+
+
+def resolve_results_root(anchor_path):
+    repo_root = Path(anchor_path).resolve().parents[1]
+    parent_root = repo_root.parent
+    gitmodules_path = parent_root / ".gitmodules"
+
+    if repo_root.name.lower() == "kvquant" and gitmodules_path.exists():
+        try:
+            gitmodules_text = gitmodules_path.read_text()
+        except OSError:
+            gitmodules_text = ""
+
+        if "path = kvquant" in gitmodules_text:
+            return parent_root / "results"
+
+    return repo_root / "results"
 
 
 def get_attention_layout(attn_module):

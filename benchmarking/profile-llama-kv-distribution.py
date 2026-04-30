@@ -7,7 +7,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from kv_profile_utils import load_wikitext_layer_tensors, reduce_blocks
+from kv_profile_utils import load_wikitext_layer_tensors, reduce_blocks, resolve_results_root
+
+RESULTS_ROOT = resolve_results_root(Path(__file__))
 
 
 def plot_profiles(profiles, token_block, channel_block, reduction, output_path):
@@ -71,13 +73,13 @@ def main():
     parser.add_argument(
         "--output-data",
         type=str,
-        default="kv-profile-layer10-64x64.pkl",
+        default=str(RESULTS_ROOT / "kv-profile-layer10-64x64.pkl"),
         help="Output pickle for the aggregated profiling data.",
     )
     parser.add_argument(
         "--output-plot",
         type=str,
-        default="kv-profile-layer10-64x64.png",
+        default=str(RESULTS_ROOT / "kv-profile-layer10-64x64.png"),
         help="Output PNG for the 3-panel profiling figure.",
     )
     parser.add_argument(
