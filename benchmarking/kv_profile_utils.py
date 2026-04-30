@@ -96,14 +96,26 @@ def rotate_half(x):
 
 
 def apply_rope(query_states, key_states, cos, sin, position_ids):
-    if position_ids is not None:
-        cos = cos.squeeze(0).squeeze(0)
-        sin = sin.squeeze(0).squeeze(0)
-        cos = cos[position_ids].unsqueeze(1)
-        sin = sin[position_ids].unsqueeze(1)
-    else:
+    if cos.dim() == 4:
         cos = cos[:, :, : key_states.shape[-2], :]
         sin = sin[:, :, : key_states.shape[-2], :]
+    elif cos.dim() == 3:
+        if cos.shape[0] == query_states.shape[0] and cos.shape[1] == query_states.shape[2]:
+            cos = cos.unsqueeze(1)
+            sin = sin.unsqueeze(1)
+        elif position_ids is not None:
+            cos = cos[position_ids].unsqueeze(1)
+            sin = sin[position_ids].unsqueeze(1)
+        else:
+            cos = cos[:, : key_states.shape[-2], :].unsqueeze(1)
+            sin = sin[:, : key_states.shape[-2], :].unsqueeze(1)
+    else:
+        if position_ids is not None:
+            cos = cos[position_ids].unsqueeze(1)
+            sin = sin[position_ids].unsqueeze(1)
+        else:
+            cos = cos[: key_states.shape[-2], :].unsqueeze(0).unsqueeze(0)
+            sin = sin[: key_states.shape[-2], :].unsqueeze(0).unsqueeze(0)
 
     query_states = (query_states * cos) + (rotate_half(query_states) * sin)
     key_states = (key_states * cos) + (rotate_half(key_states) * sin)
@@ -180,7 +192,10 @@ def capture_layer_tensors(model, input_ids, layer_idx, dev):
     def wrapped_forward(*args, **kwargs):
         hidden_states = args[0] if args else kwargs["hidden_states"]
         position_ids = kwargs.get("position_ids")
+        position_embeddings = kwargs.get("position_embeddings")
         past_key_value = kwargs.get("past_key_value")
+        if past_key_value is None:
+            past_key_value = kwargs.get("past_key_values")
 
         if not captured:
             bsz, q_len, _ = hidden_states.shape
@@ -210,7 +225,10 @@ def capture_layer_tensors(model, input_ids, layer_idx, dev):
             if past_key_value is not None:
                 kv_seq_len += past_key_value.get_usable_length(kv_seq_len, attn_module.layer_idx)
 
-            cos, sin = get_rope_cos_sin(attn_module, value_states, position_ids_local, kv_seq_len)
+            if position_embeddings is not None:
+                cos, sin = position_embeddings
+            else:
+                cos, sin = get_rope_cos_sin(attn_module, value_states, position_ids_local, kv_seq_len)
             _, key_states_post = apply_rope(query_states, key_states, cos, sin, position_ids_local)
 
             captured["k_pre_rope"] = key_states_pre[0].detach().float().cpu()
