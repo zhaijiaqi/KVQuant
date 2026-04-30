@@ -9,7 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from kv_profile_utils import get_model_longseqlen, load_wikitext_layers_tensors
+from kv_profile_utils import load_wikitext_layers_tensors
 
 TENSOR_ORDER = ["k_pre_rope", "k_post_rope", "values"]
 TENSOR_TITLES = {
@@ -34,9 +34,10 @@ def resolve_layer_indices(model_name, seqlen, maxseqlen, requested_layers):
     if requested_layers:
         return sorted(set(requested_layers))
 
-    model = get_model_longseqlen(model_name, seqlen, maxseqlen)
-    num_layers = len(model.model.layers)
-    del model
+    from transformers import AutoConfig
+
+    config = AutoConfig.from_pretrained(model_name)
+    num_layers = config.num_hidden_layers
     return list(range(num_layers))
 
 
