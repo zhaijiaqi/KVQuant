@@ -2123,6 +2123,7 @@ class LlamaSdpaAttention(LlamaAttention):
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         if output_attentions:
             # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
@@ -2309,7 +2310,7 @@ class LlamaPreTrainedModel(PreTrainedModel):
     _no_split_modules = ["LlamaDecoderLayer"]
     _skip_keys_device_placement = "past_key_values"
     _supports_flash_attn_2 = True
-    _supports_sdpa = True
+    _supports_sdpa = False  # KVQuant deployment: force eager attention (LlamaAttention has past_key_values_length_inp)
     _supports_cache_class = True
 
     def _init_weights(self, module):

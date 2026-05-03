@@ -33,13 +33,15 @@ def get_model(model, seqlen, maxseqlen, bits, include_sparse, first_few_fp16):
     config.include_sparse = include_sparse
     from transformers import AutoModelForCausalLM
     try:
+        import flash_attn  # noqa: F401 — only proceed if flash_attn is importable
         model = AutoModelForCausalLM.from_pretrained(
             model, config=config, torch_dtype=torch.half,
-            use_flash_attention_2=True, device_map="cpu"
+            attn_implementation="flash_attention_2", device_map="cpu"
         )
     except (ImportError, ValueError, TypeError):
         model = AutoModelForCausalLM.from_pretrained(
-            model, config=config, torch_dtype=torch.half, device_map="cpu"
+            model, config=config, torch_dtype=torch.half,
+            attn_implementation="eager", device_map="cpu"
         )
     model.seqlen = seqlen
     return model

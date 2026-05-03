@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: transformers
 Version: 4.38.0.dev0
 Summary: State-of-the-art Machine Learning for JAX, PyTorch and TensorFlow
@@ -475,5 +475,18 @@ Requires-Dist: torch<2.2.0; extra == "agents"
 Requires-Dist: sentencepiece!=0.1.92,>=0.1.91; extra == "agents"
 Requires-Dist: opencv-python; extra == "agents"
 Requires-Dist: Pillow<=15.0,>=10.0.1; extra == "agents"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: license-file
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
 
 # KVQuant Transformers Environment for Deployment
