@@ -17,6 +17,7 @@ import transformers
 import pickle
 import json
 
+
 def get_model(model, seqlen, maxseqlen, bits, include_sparse, first_few_fp16):
     import torch
     def skip(*args, **kwargs):
@@ -31,9 +32,18 @@ def get_model(model, seqlen, maxseqlen, bits, include_sparse, first_few_fp16):
     config.abits = bits
     config.include_sparse = include_sparse
     from transformers import AutoModelForCausalLM
-    model = AutoModelForCausalLM.from_pretrained(model, config=config, torch_dtype=torch.half, use_flash_attention_2=True, device_map="cpu")
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            model, config=config, torch_dtype=torch.half,
+            use_flash_attention_2=True, device_map="cpu"
+        )
+    except (ImportError, ValueError, TypeError):
+        model = AutoModelForCausalLM.from_pretrained(
+            model, config=config, torch_dtype=torch.half, device_map="cpu"
+        )
     model.seqlen = seqlen
     return model
+
 
 # function for benchmarking runtime
 def benchmark(model, input_ids, check=False):
@@ -64,6 +74,7 @@ def benchmark(model, input_ids, check=False):
                 torch.cuda.synchronize(gpu)
         else:
             torch.cuda.synchronize()
+
     max_memory = 0
     with torch.no_grad():
         attention_mask = torch.ones((1, input_ids.numel()), device=DEV)
@@ -73,17 +84,15 @@ def benchmark(model, input_ids, check=False):
             tick = time.time()
             out = model(
                 input_ids[:, i:i+1],
-                # past_key_values=cache['past'],
                 past_key_values_length_inp=past_key_values_length,
                 attention_mask=attention_mask[:, :(i + 1)].reshape((1, -1))
             )
             sync()
             times.append(time.time() - tick)
             print(i, times[-1])
-            max_memory = max(max_memory,torch.cuda.memory_allocated() / 1024 /1024)
+            max_memory = max(max_memory, torch.cuda.memory_allocated() / 1024 / 1024)
             if check and i != input_ids.numel() - 1:
                 tot += loss(out.logits[0].to(DEV), input_ids[:, (i + 1)].to(DEV)).float()
-            # cache['past'] = list(out.past_key_values)
             past_key_values_length += 1
             del out
         sync()
@@ -91,79 +100,34 @@ def benchmark(model, input_ids, check=False):
         print('Median:', np.median(times))
         if check:
             print('PPL:', torch.exp(tot / (input_ids.numel() - 1)).item())
-            print('max memory(MiB):',max_memory)
+            print('max memory(MiB):', max_memory)
+
 
 if __name__ == '__main__':
     import argparse
     from kvquant.datautils import *
 
     parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        'model', type=str,
-        help='llama model to load'
-    )
-    parser.add_argument(
-        'dataset', type=str, choices=['wikitext2', 'ptb', 'c4'],
-        help='Which dataset to use for benchmarking.'
-    )
-    parser.add_argument(
-        '--nsamples', type=int, default=128,
-        help='Number of calibration data samples.'
-    )
-    parser.add_argument(
-        '--seed',
-        type=int, default=0, help='Seed for sampling the calibration data.'
-    )
-    parser.add_argument(
-        '--abits', type=int, default=16, choices=[2, 3, 4, 16],
-        help='#bits to use for quantization; use 16 for evaluating base model.'
-    )
-    parser.add_argument(
-        '--benchmark', type=int, default=0,
-        help='Number of tokens to use for benchmarking.'
-    )
-    parser.add_argument(
-        '--check', action='store_true',
-        help='Whether to compute perplexity during benchmarking for verification.'
-    )
-    parser.add_argument(
-        '--torch_profile', action='store_true',
-        help='Use CUDA profiling tool for timing runs.'
-    )
-    parser.add_argument(
-        '--seqlen', type=int, default=2048,
-        help='Used by dataloader'
-    )
-    parser.add_argument(
-        '--maxseqlen', type=int, default=-1,
-        help='Used to set KV cache size'
-    )
-
-    # arguments for quantization
-    parser.add_argument(
-        '--quantizer-path', type=str,
-        help='Path to quantizers.'
-    )
-    parser.add_argument(
-        '--include_sparse', action='store_true',
-        help='Whether to use dense-and-sparse quantization.'
-    )
-    parser.add_argument(
-        '--sparsity-threshold', type=float, default=1,
-        help='Outlier percentile.'
-    )
-    parser.add_argument(
-        '--first_few_fp16', type=int, default=0,
-        help='Store first few tokens separately in fp16'
-    )
-    parser.add_argument(
-        '--norm', action='store_true',
-        help='Whether to use q-norm.'
-    )
+    parser.add_argument('model', type=str, help='llama model to load')
+    parser.add_argument('dataset', type=str, choices=['wikitext2', 'ptb', 'c4'],
+                        help='Which dataset to use for benchmarking.')
+    parser.add_argument('--nsamples', type=int, default=128)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--abits', type=int, default=16, choices=[2, 3, 4, 16])
+    parser.add_argument('--benchmark', type=int, default=0,
+                        help='Number of tokens to use for benchmarking.')
+    parser.add_argument('--check', action='store_true',
+                        help='Whether to compute perplexity during benchmarking for verification.')
+    parser.add_argument('--torch_profile', action='store_true')
+    parser.add_argument('--seqlen', type=int, default=2048)
+    parser.add_argument('--maxseqlen', type=int, default=-1)
+    parser.add_argument('--quantizer-path', type=str)
+    parser.add_argument('--include_sparse', action='store_true')
+    parser.add_argument('--sparsity-threshold', type=float, default=1)
+    parser.add_argument('--first_few_fp16', type=int, default=0)
+    parser.add_argument('--norm', action='store_true')
 
     DEV = torch.device('cuda:0')
-
     args = parser.parse_args()
 
     model = get_model(args.model, args.seqlen, args.maxseqlen, args.abits, args.include_sparse, args.first_few_fp16)
@@ -187,7 +151,7 @@ if __name__ == '__main__':
                 if '.lut' in k:
                     continue
                 print('k: ', k)
-                ln = int(k.split('.')[-3]) # layer number
+                ln = int(k.split('.')[-3])  # layer number
                 q = quantizers[k]
 
                 if "k_proj" in k:
@@ -205,10 +169,10 @@ if __name__ == '__main__':
             if args.torch_profile:
                 from torch.profiler import profile, record_function, ProfilerActivity
                 with torch.profiler.profile(
-                activities=[
-                   torch.profiler.ProfilerActivity.CPU,
-                   torch.profiler.ProfilerActivity.CUDA,
-                ]
+                    activities=[
+                        torch.profiler.ProfilerActivity.CPU,
+                        torch.profiler.ProfilerActivity.CUDA,
+                    ]
                 ) as p:
                     benchmark(model, input_ids, check=args.check)
                 print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=-1))

@@ -9,8 +9,14 @@ def set_seed(seed):
 
 def get_wikitext2(nsamples, seed, seqlen, model):
     from datasets import load_dataset
-    traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
-    testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+    from pathlib import Path
+    local_dir = Path('/data/datasets/wikitext-2-raw-v1')
+    if (local_dir / 'train-0000.parquet').exists() and (local_dir / 'test-0000.parquet').exists():
+        traindata = load_dataset('parquet', data_files=str(local_dir / 'train-0000.parquet'), split='train')
+        testdata = load_dataset('parquet', data_files=str(local_dir / 'test-0000.parquet'), split='train')
+    else:
+        traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
+        testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
 
     from transformers import AutoTokenizer 
     print('here1')

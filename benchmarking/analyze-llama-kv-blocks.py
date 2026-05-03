@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from kv_profile_utils import load_wikitext_layer_tensors
+from kv_profile_utils import load_wikitext_layer_tensors, resolve_results_root
+
+RESULTS_ROOT = resolve_results_root(Path(__file__))
 
 EPS = 1e-8
 TENSOR_ORDER = ["k_pre_rope", "k_post_rope", "values"]
@@ -250,11 +252,27 @@ def plot_heatmaps(results, block_sizes, stat_name, output_path):
             ax = axes[row, col]
             heatmap = results[tensor_name]["per_block"][str(block_size)]["heatmaps"][stat_name].numpy()
             image = ax.imshow(heatmap, aspect="auto", origin="lower", cmap="viridis")
+            # ── 上方列标题（只在第 0 行写，字体加大加粗）──────────────────
             if row == 0:
-                ax.set_title(f"block={block_size}")
+                ax.set_title(f"Block size = {block_size}", fontsize=15, fontweight="bold")
+            # ── 坐标轴标签 ────────────────────────────────────────────────
+            ax.set_xlabel("Channel block index", fontsize=10)
+            ax.set_ylabel("Token block index", fontsize=10)
+            # ── 左侧行标题（只在第 0 列写，放在 y 轴标签的外侧，字体加大加粗）
             if col == 0:
-                ax.set_ylabel(TENSOR_TITLES[tensor_name])
-            ax.set_xlabel("Channel block")
+                ax.annotate(
+                    TENSOR_TITLES[tensor_name],
+                    xy=(0, 0.5),
+                    xycoords="axes fraction",
+                    xytext=(-45, 0),
+                    textcoords="offset points",
+                    fontsize=15,
+                    fontweight="bold",
+                    ha="right",
+                    va="center",
+                    rotation=90,
+                    annotation_clip=False,
+                )
             fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
 
     fig.tight_layout()
@@ -300,7 +318,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="block-analysis-layer10",
+        default=str(RESULTS_ROOT / "block-analysis-layer10"),
         help="Directory used to store JSON/CSV/PNG outputs.",
     )
     args = parser.parse_args()

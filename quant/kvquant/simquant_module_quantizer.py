@@ -7,12 +7,13 @@ from sklearn.cluster import KMeans
 import torch
 from torch.distributions import Normal
 
-def round_to_nearest_pole_sim(w, poles):
+def round_to_nearest_pole_sim(w, poles, return_freq=False):
     """
     w: weight/act values (1d vector)
     poles: tuple of values
 
     Round the numbers in w to the nearest value in poles.
+    If return_freq=True, also return per-centroid assignment counts.
     """
     stack = []
     for c in poles:
@@ -23,8 +24,13 @@ def round_to_nearest_pole_sim(w, poles):
     aug = 0
     freq = []
     for i, c in enumerate(poles):
-        aug += (idx == i) * c
+        mask = (idx == i)
+        aug += mask * c
+        if return_freq:
+            freq.append(mask.sum().item())
 
+    if return_freq:
+        return aug, freq
     return aug
 
 def get_outliers(

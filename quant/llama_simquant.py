@@ -38,11 +38,21 @@ def get_model(model, seqlen, maxseqlen):
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
 
     from transformers import AutoModelForCausalLM
-    model = AutoModelForCausalLM.from_pretrained(model, config=config, trust_remote_code=True, use_flash_attention_2=True, torch_dtype=torch.half)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model, config=config, trust_remote_code=True, use_flash_attention_2=True, torch_dtype=torch.half)
+    except (ImportError, ValueError, TypeError):
+        # flash-attn not installed, not supported, or transformers too old; fall back to standard attention
+        model = AutoModelForCausalLM.from_pretrained(model, config=config, trust_remote_code=True, torch_dtype=torch.half)
 
     model.seqlen = seqlen  #TODO
     if config.vocab_size == 32001:
         model.resize_token_embeddings(32001)
+    # single-GPU / default path
+    if hasattr(model, "model"):
+        if hasattr(model.model, "split_gpus"):
+            model.model.split_gpus = False
+        if hasattr(model.model, "split_indices"):
+            model.model.split_indices = []
     return model
 
 @torch.no_grad()
@@ -470,6 +480,11 @@ if __name__ == '__main__':
             pickle.dump(quantizers, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     else:
+
+        # fp16 baseline: skip quantization, evaluate directly
+        if args.abits == 16:
+            llama_eval(model, testloader, DEV)
+            import sys; sys.exit(0)
 
         # load quantizers and evaluate model
 
