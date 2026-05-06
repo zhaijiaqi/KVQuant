@@ -1,17 +1,57 @@
 import numpy as np
 import torch
 
+
 def set_seed(seed):
     np.random.seed(seed)
     torch.random.manual_seed(seed)
 
-def get_wikitext2(nsamples, seed, seqlen, model):
-    from datasets import load_dataset
-    traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
-    testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
 
+def _load_tokenizer(model, use_fast=False):
     from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+
+    attempts = [
+        {"use_fast": use_fast, "trust_remote_code": True},
+        {"use_fast": use_fast},
+    ]
+    if not use_fast:
+        attempts.extend(
+            [
+                {"use_fast": False, "trust_remote_code": True, "legacy": True},
+                {"use_fast": False, "legacy": True},
+            ]
+        )
+
+    last_error = None
+    for kwargs in attempts:
+        try:
+            return AutoTokenizer.from_pretrained(model, **kwargs)
+        except (ImportError, TypeError, ValueError) as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Unable to load tokenizer for {model}")
+
+
+def _load_local_or_remote_wikitext():
+    from datasets import load_dataset
+    from pathlib import Path
+
+    local_dir = Path("/data/datasets/wikitext-2-raw-v1")
+    train_file = local_dir / "train-0000.parquet"
+    test_file = local_dir / "test-0000.parquet"
+    if train_file.exists() and test_file.exists():
+        traindata = load_dataset("parquet", data_files=str(train_file), split="train")
+        testdata = load_dataset("parquet", data_files=str(test_file), split="train")
+    else:
+        traindata = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
+        testdata = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+    return traindata, testdata
+
+
+def get_wikitext2(nsamples, seed, seqlen, model):
+    traindata, testdata = _load_local_or_remote_wikitext()
+    tokenizer = _load_tokenizer(model, use_fast=False)
     trainenc = tokenizer("\n\n".join(traindata['text']), return_tensors='pt')
     testenc = tokenizer("\n\n".join(testdata['text']), return_tensors='pt')
 
@@ -32,8 +72,7 @@ def get_ptb(nsamples, seed, seqlen, model):
     traindata = load_dataset('ptb_text_only', 'penn_treebank', split='train')
     valdata = load_dataset('ptb_text_only', 'penn_treebank', split='validation')
 
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    tokenizer = _load_tokenizer(model, use_fast=False)
     trainenc = tokenizer("\n\n".join(traindata['sentence']), return_tensors='pt')
     testenc = tokenizer("\n\n".join(valdata['sentence']), return_tensors='pt')
 
@@ -58,8 +97,7 @@ def get_c4(nsamples, seed, seqlen, model):
         'allenai/c4', 'allenai--c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation', use_auth_token=False
     )
 
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    tokenizer = _load_tokenizer(model, use_fast=False)
 
     import random
     random.seed(seed)
@@ -70,7 +108,10 @@ def get_c4(nsamples, seed, seqlen, model):
             trainenc = tokenizer(traindata[i]['text'], return_tensors='pt')
             if trainenc.input_ids.shape[1] >= seqlen:
                 break
-        i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
+        if trainenc.input_ids.shape[1] - seqlen - 1 < 0:
+            i = 0
+        else:
+            i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
         j = i + seqlen
         inp = trainenc.input_ids[:, i:j]
         tar = inp.clone()
@@ -86,7 +127,10 @@ def get_c4(nsamples, seed, seqlen, model):
             tmp = tokenizer(valdata[i]['text'], return_tensors='pt')
             if tmp.input_ids.shape[1] >= seqlen:
                 break
-        i = random.randint(0, tmp.input_ids.shape[1] - seqlen - 1)
+        if tmp.input_ids.shape[1] - seqlen - 1 <= 0:
+            i = 0
+        else:
+            i = random.randint(0, tmp.input_ids.shape[1] - seqlen - 1)
         j = i + seqlen
         valenc.append(tmp.input_ids[:, i:j])
     valenc = torch.hstack(valenc)
@@ -102,8 +146,7 @@ def get_ptb_new(nsamples, seed, seqlen, model):
     traindata = load_dataset('ptb_text_only', 'penn_treebank', split='train')
     testdata = load_dataset('ptb_text_only', 'penn_treebank', split='test')
 
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    tokenizer = _load_tokenizer(model, use_fast=False)
     trainenc = tokenizer(" ".join(traindata['sentence']), return_tensors='pt')
     testenc = tokenizer(" ".join(testdata['sentence']), return_tensors='pt')
 
@@ -128,8 +171,7 @@ def get_c4_new(nsamples, seed, seqlen, model):
         'allenai/c4', 'allenai--c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation'
     )
 
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    tokenizer = _load_tokenizer(model, use_fast=False)
 
     import random
     random.seed(seed)

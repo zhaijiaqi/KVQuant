@@ -7,24 +7,47 @@ from sklearn.cluster import KMeans
 import torch
 from torch.distributions import Normal
 
-def round_to_nearest_pole_sim(w, poles):
+def round_to_nearest_pole_sim(w, poles, return_freq=False, chunk_size=2_000_000):
     """
     w: weight/act values (1d vector)
     poles: tuple of values
 
     Round the numbers in w to the nearest value in poles.
     """
-    stack = []
-    for c in poles:
-        diff = (w - c).abs()
-        stack.append(diff)
-    diff = torch.stack(stack)
-    idx = diff.argmin(axis=0)
-    aug = 0
-    freq = []
-    for i, c in enumerate(poles):
-        aug += (idx == i) * c
+    if not torch.is_tensor(w):
+        w = torch.as_tensor(w)
 
+    poles_t = torch.as_tensor(poles, device=w.device, dtype=w.dtype).flatten()
+    if poles_t.numel() == 0:
+        raise ValueError("poles must contain at least one value")
+
+    flat_w = w.reshape(-1)
+    flat_out = torch.empty_like(flat_w)
+    freq = torch.zeros(poles_t.numel(), device=flat_w.device, dtype=torch.long) if return_freq else None
+
+    if chunk_size <= 0:
+        chunk_size = flat_w.numel()
+
+    for start in range(0, flat_w.numel(), chunk_size):
+        end = min(start + chunk_size, flat_w.numel())
+        chunk = flat_w[start:end]
+
+        best_idx = torch.zeros(chunk.shape, device=chunk.device, dtype=torch.long)
+        best_diff = (chunk - poles_t[0]).abs()
+
+        for i in range(1, poles_t.numel()):
+            diff = (chunk - poles_t[i]).abs()
+            better = diff < best_diff
+            best_diff = torch.where(better, diff, best_diff)
+            best_idx = torch.where(better, torch.full_like(best_idx, i), best_idx)
+
+        flat_out[start:end] = poles_t.index_select(0, best_idx)
+        if return_freq:
+            freq += torch.bincount(best_idx, minlength=poles_t.numel())
+
+    aug = flat_out.reshape(w.shape)
+    if return_freq:
+        return aug, [count for count in freq]
     return aug
 
 def get_outliers(

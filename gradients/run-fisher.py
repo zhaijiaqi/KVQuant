@@ -234,12 +234,21 @@ def train():
 
     config._flash_attn_2_enabled = True
 
-    model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        config=config,
-        cache_dir=training_args.cache_dir,
-        trust_remote_code=True
-    )
+    try:
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            config=config,
+            cache_dir=training_args.cache_dir,
+            trust_remote_code=True,
+            use_flash_attention_2=True,
+        )
+    except (ImportError, ValueError, TypeError):
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            config=config,
+            cache_dir=training_args.cache_dir,
+            trust_remote_code=True,
+        )
 
 #    model.seqlen = seqlen  #TODO
     if config.vocab_size == 32001:
@@ -259,7 +268,9 @@ def train():
     # For other models, replace this with proper variable names for model and layers
     _model = model.model
     _layers = _model.layers
-    _model.set_devices()
+    # set_devices() is only available in the custom KVQuant transformers fork
+    if hasattr(_model, "set_devices"):
+        _model.set_devices()
     grads = {}
 
     # main loop
@@ -293,6 +304,15 @@ def train():
                 grads[f'v_proj{i}'] = vgrad
             else:
                 grads[f'v_proj{i}'] = torch.cat((grads[f'v_proj{i}'], vgrad), dim=1)
+
+            # free GPU memory: detach cached activations and clear gradients
+            k_proj.act = None
+            v_proj.act = None
+
+        # free computation graph and gradient buffers between samples
+        model.zero_grad(set_to_none=True)
+        del outputs, loss
+        torch.cuda.empty_cache()
 
     ## This is a hacky solution to save the gradients
     # where we overwrite all the weights in the model as the gradients
