@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 from sklearn.cluster import KMeans
 
@@ -49,6 +50,91 @@ def round_to_nearest_pole_sim(w, poles, return_freq=False, chunk_size=2_000_000)
     if return_freq:
         return aug, [count for count in freq]
     return aug
+
+
+def _tile_flatten(inp, tile_size):
+    rows, cols = inp.shape
+    row_pad = (tile_size - rows % tile_size) % tile_size
+    col_pad = (tile_size - cols % tile_size) % tile_size
+
+    if row_pad or col_pad:
+        padded = F.pad(inp, (0, col_pad, 0, row_pad))
+    else:
+        padded = inp
+
+    padded_rows, padded_cols = padded.shape
+    tiles = padded.reshape(
+        padded_rows // tile_size,
+        tile_size,
+        padded_cols // tile_size,
+        tile_size,
+    ).permute(0, 2, 1, 3).contiguous()
+
+    return tiles.reshape(tiles.shape[0], tiles.shape[1], -1), {
+        "tile_rows": tiles.shape[0],
+        "tile_cols": tiles.shape[1],
+        "tile_size": tile_size,
+        "orig_rows": rows,
+        "orig_cols": cols,
+    }
+
+
+def _tile_restore(flat, meta):
+    tiles = flat.reshape(
+        meta["tile_rows"],
+        meta["tile_cols"],
+        meta["tile_size"],
+        meta["tile_size"],
+    )
+    out = tiles.permute(0, 2, 1, 3).contiguous().reshape(
+        meta["tile_rows"] * meta["tile_size"],
+        meta["tile_cols"] * meta["tile_size"],
+    )
+    return out[: meta["orig_rows"], : meta["orig_cols"]]
+
+
+def _build_first_few_mask(flat_shape, meta, first_few_fp16, nsamples, device=None):
+    if first_few_fp16 < 0 or nsamples <= 0:
+        return None
+
+    sample_seqlen = meta["orig_rows"] // nsamples
+    if sample_seqlen <= 0:
+        return None
+
+    mask_2d = torch.zeros((meta["orig_rows"], meta["orig_cols"]), dtype=torch.bool, device=device)
+    for sample_idx in range(nsamples):
+        start = sample_idx * sample_seqlen
+        end = min(start + first_few_fp16, (sample_idx + 1) * sample_seqlen)
+        mask_2d[start:end, :] = True
+
+    mask_flat, _ = _tile_flatten(mask_2d.float(), meta["tile_size"])
+    return mask_flat.bool().reshape(flat_shape)
+
+
+def _tile_dynamic_stats(flat, include_sparse, sparsity_threshold, first_few_mask=None):
+    if include_sparse:
+        t = 1 - ((1 - sparsity_threshold) / 2)
+        upper = torch.quantile(flat, t, dim=-1)
+        lower = torch.quantile(flat, 1 - t, dim=-1)
+        outlier_mask = torch.logical_or(
+            flat >= upper.unsqueeze(-1),
+            flat <= lower.unsqueeze(-1),
+        )
+        if first_few_mask is not None:
+            outlier_mask = torch.logical_or(outlier_mask, first_few_mask)
+        median = torch.median(flat, dim=-1).values
+        tmp = torch.where(outlier_mask, median.unsqueeze(-1), flat)
+        maxval = tmp.max(dim=-1).values
+        minval = tmp.min(dim=-1).values
+    else:
+        outlier_mask = first_few_mask
+        maxval = flat.max(dim=-1).values
+        minval = flat.min(dim=-1).values
+
+    rangeval = (maxval - minval) / 2
+    rangeval = torch.where(rangeval == 0, torch.ones_like(rangeval), rangeval)
+    offset = (maxval + minval) / 2
+    return offset, rangeval, outlier_mask
 
 def get_outliers(
     w,
@@ -383,6 +469,68 @@ def quant_fn_nuq_recon(
 
     return qinp_out.float()
 
+
+def quant_fn_nuq_recon_tile(
+    inp,
+    bits=8,
+    tile_size=32,
+    dynamicquantization=True,
+    include_sparse=False,
+    sparsity_threshold=0.999,
+    lut=None,
+    norm=False,
+    normscale=None,
+    normoffset=None,
+    first_few_fp16=-1,
+):
+    if lut is None:
+        raise NotImplementedError("Tile quantization currently requires a LUT-backed NUQ path.")
+
+    orig = inp if first_few_fp16 > -1 else None
+    flat, meta = _tile_flatten(inp, tile_size)
+    first_few_mask = _build_first_few_mask(
+        flat.shape,
+        meta,
+        first_few_fp16,
+        nsamples=1,
+        device=flat.device,
+    )
+    offset, rangeval, outlier_mask = _tile_dynamic_stats(
+        flat,
+        include_sparse=include_sparse,
+        sparsity_threshold=sparsity_threshold,
+        first_few_mask=first_few_mask,
+    )
+
+    shifted = flat - offset.unsqueeze(-1)
+    if include_sparse and outlier_mask is not None:
+        outliers = torch.where(outlier_mask, shifted, torch.zeros_like(shifted))
+        shifted = shifted - outliers
+    else:
+        outliers = None
+
+    normalized = shifted / rangeval.unsqueeze(-1)
+    lut_cuda = torch.as_tensor(lut[0], device=normalized.device, dtype=normalized.dtype)
+    quantized = round_to_nearest_pole_sim(normalized.reshape(-1), lut_cuda).reshape(normalized.shape).float()
+
+    if norm:
+        normscale = normscale.to(normalized.device)
+        normoffset = normoffset.to(normalized.device)
+        quantized = quantized * normscale + normoffset
+
+    restored = quantized * rangeval.unsqueeze(-1)
+    if include_sparse and outliers is not None:
+        restored[outlier_mask] = 0
+        restored = restored + outliers
+    restored = restored + offset.unsqueeze(-1)
+    restored = torch.nan_to_num(restored, nan=0.0, posinf=0.0, neginf=0.0)
+    out = _tile_restore(restored, meta).float()
+
+    if orig is not None:
+        out[:first_few_fp16, :] = orig[:first_few_fp16, :]
+
+    return out
+
 # simquant quantizer (calibration)
 class SimQuant:
     def __init__(
@@ -391,7 +539,8 @@ class SimQuant:
                     bits,
                     perchannel=True,
                     qchannel=0,
-                    include_rope=False
+                    include_rope=False,
+                    tile_size=0
                 ):
         self.layer = layer
         self.dev = self.layer.weight.device
@@ -399,6 +548,7 @@ class SimQuant:
         self.perchannel = perchannel
         self.qchannel = qchannel
         self.bits = bits
+        self.tile_size = tile_size
 
         self.rows = W.shape[0]
         self.columns = W.shape[1]
@@ -430,6 +580,80 @@ class SimQuant:
         cap_outliers=False,
         first_few_fp16=-1
     ):
+
+        if self.tile_size > 0:
+            data = self.out.float()
+            flat, meta = _tile_flatten(data, self.tile_size)
+            first_few_mask = _build_first_few_mask(
+                flat.shape,
+                meta,
+                first_few_fp16,
+                self.nsamples,
+                device=flat.device,
+            )
+            offset, rangeval, outlier_mask = _tile_dynamic_stats(
+                flat,
+                include_sparse=include_sparse,
+                sparsity_threshold=sparsity_threshold,
+                first_few_mask=first_few_mask,
+            )
+
+            shifted = flat - offset.unsqueeze(-1)
+            normalized = shifted / rangeval.unsqueeze(-1)
+            if outlier_mask is None:
+                outlier_mask = torch.zeros_like(normalized, dtype=torch.bool)
+
+            act_distn_np_without_outliers = normalized[~outlier_mask].float().cpu().numpy().reshape(-1, 1)
+
+            if fisher is not None:
+                fisher_data = fisher.float()
+                if fisher_data.dim() > 2:
+                    fisher_data = fisher_data.reshape(-1, fisher_data.shape[-1])
+                fisher_flat, _ = _tile_flatten(fisher_data, self.tile_size)
+                fisher_mask = outlier_mask
+                if fisher_mask.device != fisher_flat.device:
+                    fisher_mask = fisher_mask.to(fisher_flat.device)
+                fisher_info_tmp_without_outliers = fisher_flat[~fisher_mask].float().cpu().numpy()
+                kmeans = KMeans(
+                    n_clusters=2 ** self.bits,
+                    random_state=0,
+                    n_init="auto",
+                    max_iter=50,
+                ).fit(
+                    act_distn_np_without_outliers,
+                    sample_weight=fisher_info_tmp_without_outliers,
+                )
+            else:
+                kmeans = KMeans(
+                    n_clusters=2 ** self.bits,
+                    random_state=0,
+                    n_init="auto",
+                    max_iter=50,
+                ).fit(act_distn_np_without_outliers)
+
+            centroids = [kmeans.cluster_centers_]
+
+            upper = offset + rangeval
+            lower = offset - rangeval
+
+            if norm:
+                centroid = torch.as_tensor(centroids[0], device=normalized.device, dtype=normalized.dtype)
+                aug = normalized
+                not_outlier_mask = ~outlier_mask
+                m1 = (aug * not_outlier_mask).sum() / not_outlier_mask.sum()
+                denom = not_outlier_mask.sum()
+                stdev1 = torch.sqrt(torch.sum(((aug - m1) * not_outlier_mask) ** 2) / denom)
+
+                aug, freq = round_to_nearest_pole_sim(aug, centroid, return_freq=True)
+
+                m2 = (aug * not_outlier_mask).sum() / not_outlier_mask.sum()
+                stdev2 = torch.sqrt(torch.sum(((aug - m2) * not_outlier_mask) ** 2) / denom)
+
+                normscale = stdev1 / stdev2
+                normoffset = (-m2) * (stdev1 / stdev2) + m1
+                return upper, lower, centroids, normscale, normoffset
+
+            return upper, lower, centroids
 
         # for now, just update threshold here
         if include_sparse:
@@ -602,7 +826,8 @@ class QuantLinearSim(nn.Module):
                     norm=False,
                     first_few_fp16=-1,
                     cap_outliers=-1,
-                    clamp=False
+                    clamp=False,
+                    tile_size=0
                 ):
 
         super().__init__()
@@ -622,6 +847,7 @@ class QuantLinearSim(nn.Module):
         self.perchannel = perchannel
         self.dynamicquantization = dynamicquantization
         self.clamp = clamp
+        self.tile_size = tile_size
 
         if perchannel:
             self.qchannel = 0
@@ -637,6 +863,8 @@ class QuantLinearSim(nn.Module):
 
         self.nuq = nuq
         self.nf_nuq = nf_nuq
+        if self.tile_size > 0 and self.nf_nuq:
+            raise NotImplementedError("Tile quantization for Value activations does not support NormalFloat yet.")
         if self.nuq and not self.nf_nuq:
             self.lut = quantizer[2]
         else:
@@ -735,73 +963,91 @@ class QuantLinearSim(nn.Module):
         y = y + self.bias if self.bias is not None else y
         y = y.float()
 
-        # if using dense-and-sparse quantization, detect outliers in output tensor
-        if self.include_sparse:
-            if self.dynamicquantization:
-                outlier_mask = get_outliers_dynamic(
-                    y,
-                    channel=self.ochannel,
-                    thresh=self.sparsity_threshold,
-                    first_few_fp16=self.first_few_fp16
-                )
-            else:
-                self.outlier_threshold_upper = self.outlier_threshold_upper.to(y.device)
-                self.outlier_threshold_lower = self.outlier_threshold_lower.to(y.device)
-                outlier_mask = get_outliers(
-                    y,
-                    channel=self.ochannel,
-                    outlier_threshold_upper=self.outlier_threshold_upper,
-                    outlier_threshold_lower=self.outlier_threshold_lower,
-                    cap_outliers=self.cap_outliers,
-                    first_few_fp16=self.first_few_fp16
-                )
-        else:
-            outlier_mask = None
-
         # quantize output tensor
-        if self.nuq:
-            if self.nf_nuq:
-                y = quant_fn_nf(
+        if self.tile_size > 0:
+            if self.nuq:
+                y = quant_fn_nuq_recon_tile(
                     y,
                     bits=self.bits,
-                    qchannel=self.qchannel,
-                    maxval=self.outlier_threshold_upper,
-                    minval=self.outlier_threshold_lower,
-                    include_sparse=self.include_sparse,
-                    outlier_mask=outlier_mask,
+                    tile_size=self.tile_size,
                     dynamicquantization=self.dynamicquantization,
-                    nf_lut=self.nf_signposts
-                )
-            else:
-                y = quant_fn_nuq_recon(
-                    y,
-                    bits=self.bits,
-                    qchannel=self.qchannel,
-                    maxval=self.outlier_threshold_upper,
-                    minval=self.outlier_threshold_lower,
                     include_sparse=self.include_sparse,
-                    outlier_mask=outlier_mask,
-                    dynamicquantization=self.dynamicquantization,
+                    sparsity_threshold=self.sparsity_threshold,
                     lut=self.lut,
                     norm=self.norm,
                     normscale=self.normscale,
                     normoffset=self.normoffset,
-                    first_few_fp16=self.first_few_fp16
+                    first_few_fp16=self.first_few_fp16,
                 )
-
+            else:
+                raise NotImplementedError("Tile quantization is only implemented for NUQ evaluation.")
         else:
-            # low-bit uniform simulated quant
-            y = quant_fn_zp(
-                y,
-                bits=self.bits,
-                qchannel=self.qchannel,
-                maxval=self.outlier_threshold_upper,
-                minval=self.outlier_threshold_lower,
-                include_sparse=self.include_sparse,
-                outlier_mask=outlier_mask,
-                dynamicquantization=self.dynamicquantization,
-                clamp=self.clamp
-            )
+            # if using dense-and-sparse quantization, detect outliers in output tensor
+            if self.include_sparse:
+                if self.dynamicquantization:
+                    outlier_mask = get_outliers_dynamic(
+                        y,
+                        channel=self.ochannel,
+                        thresh=self.sparsity_threshold,
+                        first_few_fp16=self.first_few_fp16
+                    )
+                else:
+                    self.outlier_threshold_upper = self.outlier_threshold_upper.to(y.device)
+                    self.outlier_threshold_lower = self.outlier_threshold_lower.to(y.device)
+                    outlier_mask = get_outliers(
+                        y,
+                        channel=self.ochannel,
+                        outlier_threshold_upper=self.outlier_threshold_upper,
+                        outlier_threshold_lower=self.outlier_threshold_lower,
+                        cap_outliers=self.cap_outliers,
+                        first_few_fp16=self.first_few_fp16
+                    )
+            else:
+                outlier_mask = None
+
+            if self.nuq:
+                if self.nf_nuq:
+                    y = quant_fn_nf(
+                        y,
+                        bits=self.bits,
+                        qchannel=self.qchannel,
+                        maxval=self.outlier_threshold_upper,
+                        minval=self.outlier_threshold_lower,
+                        include_sparse=self.include_sparse,
+                        outlier_mask=outlier_mask,
+                        dynamicquantization=self.dynamicquantization,
+                        nf_lut=self.nf_signposts
+                    )
+                else:
+                    y = quant_fn_nuq_recon(
+                        y,
+                        bits=self.bits,
+                        qchannel=self.qchannel,
+                        maxval=self.outlier_threshold_upper,
+                        minval=self.outlier_threshold_lower,
+                        include_sparse=self.include_sparse,
+                        outlier_mask=outlier_mask,
+                        dynamicquantization=self.dynamicquantization,
+                        lut=self.lut,
+                        norm=self.norm,
+                        normscale=self.normscale,
+                        normoffset=self.normoffset,
+                        first_few_fp16=self.first_few_fp16
+                    )
+
+            else:
+                # low-bit uniform simulated quant
+                y = quant_fn_zp(
+                    y,
+                    bits=self.bits,
+                    qchannel=self.qchannel,
+                    maxval=self.outlier_threshold_upper,
+                    minval=self.outlier_threshold_lower,
+                    include_sparse=self.include_sparse,
+                    outlier_mask=outlier_mask,
+                    dynamicquantization=self.dynamicquantization,
+                    clamp=self.clamp
+                )
 
         self.weight = self.weight.cpu()
         if self.bias is not None:
@@ -827,7 +1073,8 @@ def make_quant_sim(
                     norm=False,
                     cap_outliers=-1,
                     first_few_fp16=-1,
-                    clamp=False
+                    clamp=False,
+                    tile_size=0
                   ):
     if isinstance(module, QuantLinearSim):
         return
@@ -853,7 +1100,8 @@ def make_quant_sim(
                                                     norm=norm,
                                                     cap_outliers=cap_outliers,
                                                     first_few_fp16=first_few_fp16,
-                                                    clamp=clamp
+                                                    clamp=clamp,
+                                                    tile_size=tile_size
                                                 ))
         del tmp
     for name1, child in module.named_children():
@@ -871,5 +1119,6 @@ def make_quant_sim(
                         norm=norm,
                         cap_outliers=cap_outliers,
                         first_few_fp16=first_few_fp16,
-                        clamp=clamp
+                        clamp=clamp,
+                        tile_size=tile_size
                       )

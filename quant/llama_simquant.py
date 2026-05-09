@@ -16,9 +16,38 @@ from kvquant.model_parse import (
 
 import pickle
 import json
+import re
 
 import math
 import argparse
+
+
+def extract_layer_index(name):
+    match = re.search(r"layers\.(\d+)\.", name)
+    return int(match.group(1)) if match else None
+
+
+def resolve_value_granularity(args, model):
+    value_perchannel_layers = set(args.value_perchannel_layers or [])
+    if args.value_tile_size <= 0:
+        value_tile_layers = set()
+    elif args.value_tile_all_layers:
+        value_tile_layers = set(range(model.config.num_hidden_layers)) - value_perchannel_layers
+    else:
+        value_tile_layers = set(args.value_tile_layers or [])
+
+    overlap = value_perchannel_layers & value_tile_layers
+    if overlap:
+        raise ValueError(
+            f"Overlapping value per-channel and tile layers are not allowed: {sorted(overlap)}"
+        )
+
+    if args.nf and value_tile_layers:
+        raise ValueError(
+            "Value tile quantization does not support --nf yet; please disable --nf or remove tiled value layers."
+        )
+
+    return value_perchannel_layers, value_tile_layers
 
 def get_model(model, seqlen, maxseqlen):
     import torch
@@ -47,6 +76,7 @@ def get_model(model, seqlen, maxseqlen):
             torch_dtype=torch.half,
         )
     except (ImportError, ValueError, TypeError):
+        # flash-attn not installed, not supported, or transformers too old; fall back to standard attention
         model = AutoModelForCausalLM.from_pretrained(
             model,
             config=config,
@@ -57,6 +87,7 @@ def get_model(model, seqlen, maxseqlen):
     model.seqlen = seqlen  #TODO
     if config.vocab_size == 32001:
         model.resize_token_embeddings(32001)
+    # single-GPU / default path
     if hasattr(model, "model"):
         if hasattr(model.model, "split_gpus"):
             model.model.split_gpus = False
@@ -165,7 +196,7 @@ def llama_eval(model, testenc, dev):
     return ppl.item()
 
 @torch.no_grad()
-def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match, bits, include_sparse=False, sparsity_threshold=0.999, nuq=False, fisher=None, norm=False, cap_outliers=False, first_few_fp16=False):
+def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match, bits, include_sparse=False, sparsity_threshold=0.999, nuq=False, fisher=None, norm=False, cap_outliers=False, first_few_fp16=False, value_perchannel_layers=None, value_tile_layers=None, value_tile_size=0):
     print('Starting ...')
 
     use_cache = model.config.use_cache
@@ -212,6 +243,9 @@ def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match,
     print('Quantizing ...')
 
     quantizers = {}
+    value_perchannel_layers = value_perchannel_layers or set()
+    value_tile_layers = value_tile_layers or set()
+
     for i in range(len(layers)):
         print("Layer", i)
         layer = layers[i].to(dev)
@@ -219,6 +253,7 @@ def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match,
 
         perchannel_list = []
         pertensor_list = []
+        pertile_list = []
         full_list = []
 
         for f in full:
@@ -228,7 +263,12 @@ def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match,
                     full_list.append(f)
             for p in pertensor_match:
                 if p in f:
-                    pertensor_list.append(f)
+                    if "v_proj" in f and i in value_perchannel_layers:
+                        perchannel_list.append(f)
+                    elif value_tile_size > 0 and "v_proj" in f and i in value_tile_layers:
+                        pertile_list.append(f)
+                    else:
+                        pertensor_list.append(f)
                     full_list.append(f)
 
         sequential = list(full.keys())
@@ -250,6 +290,14 @@ def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match,
                                         bits,
                                         perchannel=True,
                                         qchannel=-1
+                                     )
+            elif name in pertile_list:
+                simquant[name] = SimQuant(
+                                        subset[name],
+                                        bits,
+                                        perchannel=False,
+                                        qchannel=-1,
+                                        tile_size=value_tile_size
                                      )
             else:
                 continue
@@ -411,6 +459,22 @@ if __name__ == '__main__':
         '--clamp', action='store_true',
         help='Clamp w/ integer quantization'
     )
+    parser.add_argument(
+        '--value-tile-size', type=int, default=0,
+        help='If >0, quantize selected value layers with shared square tiles of this size.'
+    )
+    parser.add_argument(
+        '--value-perchannel-layers', type=int, nargs='*', default=None,
+        help='Layer indices whose v_proj activations should use per-channel quantization.'
+    )
+    parser.add_argument(
+        '--value-tile-layers', type=int, nargs='*', default=None,
+        help='Layer indices whose v_proj activations should use tile quantization.'
+    )
+    parser.add_argument(
+        '--value-tile-all-layers', action='store_true',
+        help='Apply tile quantization to all value layers.'
+    )
 
     DEV = torch.device('cuda:0')
 
@@ -428,6 +492,12 @@ if __name__ == '__main__':
 
     if args.seqlen != -1:
         model.seqlen = args.seqlen
+
+    value_perchannel_layers, value_tile_layers = resolve_value_granularity(args, model)
+    if value_perchannel_layers:
+        print(f"Using value per-channel quantization on layers: {sorted(value_perchannel_layers)}")
+    if value_tile_layers:
+        print(f"Using value tile quantization on layers: {sorted(value_tile_layers)} with tile_size={args.value_tile_size}")
 
     model = model.half()
     print('Done.')
@@ -482,7 +552,10 @@ if __name__ == '__main__':
             fisher=fisher,
             norm=args.norm,
             cap_outliers=args.cap_outliers,
-            first_few_fp16=args.first_few_fp16
+            first_few_fp16=args.first_few_fp16,
+            value_perchannel_layers=value_perchannel_layers,
+            value_tile_layers=value_tile_layers,
+            value_tile_size=args.value_tile_size,
         )
 
         with open(args.quantizer_path, 'wb') as handle:
@@ -498,6 +571,7 @@ if __name__ == '__main__':
         # replace layers
         perchannelquant = {}
         pertokenquant = {}
+        pertilequant = {}
 
         perchannel_match = args.perchannel
         pertoken_match = args.pertoken
@@ -512,7 +586,13 @@ if __name__ == '__main__':
 
             for p in pertoken_match:
                 if p in k:
-                    pertokenquant[k] = quantizers[k]
+                    layer_idx = extract_layer_index(k)
+                    if "v_proj" in k and layer_idx in value_perchannel_layers:
+                        perchannelquant[k] = quantizers[k]
+                    elif "v_proj" in k and args.value_tile_size > 0 and layer_idx in value_tile_layers:
+                        pertilequant[k] = quantizers[k]
+                    else:
+                        pertokenquant[k] = quantizers[k]
 
         #per-vector quant
         make_quant_sim(
@@ -547,6 +627,24 @@ if __name__ == '__main__':
             first_few_fp16=args.first_few_fp16,
             clamp=args.clamp
         )
+
+        if pertilequant:
+            make_quant_sim(
+                model,
+                pertilequant,
+                args.abits,
+                perchannel=False,
+                include_sparse=args.include_sparse,
+                sparsity_threshold=args.sparsity_threshold,
+                dynamicquantization=True,
+                nuq=args.nuq,
+                nf_nuq=args.nf,
+                norm=args.norm,
+                cap_outliers=args.cap_outliers,
+                first_few_fp16=args.first_few_fp16,
+                clamp=args.clamp,
+                tile_size=args.value_tile_size,
+            )
 
         #run evaluation
         llama_eval(model, testloader, DEV)
