@@ -305,13 +305,6 @@ def plot_aggregate_summary(aggregate, block_sizes, output_path):
     plt.close(fig)
 
 
-def plot_max_abs_all_layers(results, layer_indices, block_sizes, output_dir):
-    """为每一层单独输出一张 block_max_abs 热力图。"""
-    for layer_idx in layer_indices:
-        out_path = output_dir / f"block_max_abs_layer{layer_idx:02d}.png"
-        SINGLE_LAYER.plot_heatmaps(results[layer_idx], block_sizes, "max_abs", out_path)
-
-
 def print_console_summary(aggregate, block_sizes):
     print("Cross-layer summary")
     for tensor_name in TENSOR_ORDER:
@@ -336,8 +329,8 @@ def main():
         description="Analyze whether block quantization conclusions stay consistent across many LLaMA layers.",
     )
     parser.add_argument("model", type=str, help="Path or HF name for the LLaMA model.")
-    parser.add_argument("--seqlen", type=int, default=3000)
-    parser.add_argument("--maxseqlen", type=int, default=3000)
+    parser.add_argument("--seqlen", type=int, default=2048)
+    parser.add_argument("--maxseqlen", type=int, default=2048)
     parser.add_argument("--sample-index", type=int, default=0)
     parser.add_argument("--layer-indices", type=int, nargs="*", default=None, help="Explicit layer indices to analyze.")
     parser.add_argument("--block-sizes", type=int, nargs="+", default=[32, 64, 128, 256])
@@ -378,7 +371,6 @@ def main():
     write_aggregate_csv(aggregate, block_sizes, output_dir / "multilayer_aggregate_summary.csv")
     plot_layerwise_rel_rmse(results, layer_indices, block_sizes, output_dir / "multilayer_layerwise_rel_rmse.png")
     plot_aggregate_summary(aggregate, block_sizes, output_dir / "multilayer_aggregate_summary.png")
-    plot_max_abs_all_layers(results, layer_indices, block_sizes, output_dir)
 
     print_console_summary(aggregate, block_sizes)
     print(f"\nSaved outputs to {output_dir}")

@@ -234,12 +234,21 @@ def train():
 
     config._flash_attn_2_enabled = True
 
-    model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        config=config,
-        cache_dir=training_args.cache_dir,
-        trust_remote_code=True
-    )
+    try:
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            config=config,
+            cache_dir=training_args.cache_dir,
+            trust_remote_code=True,
+            use_flash_attention_2=True,
+        )
+    except (ImportError, ValueError, TypeError):
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            config=config,
+            cache_dir=training_args.cache_dir,
+            trust_remote_code=True,
+        )
 
 #    model.seqlen = seqlen  #TODO
     if config.vocab_size == 32001:

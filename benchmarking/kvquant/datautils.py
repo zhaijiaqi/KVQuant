@@ -7,8 +7,14 @@ def set_seed(seed):
 
 def get_wikitext2(nsamples, seed, seqlen, model):
     from datasets import load_dataset
-    traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
-    testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+    import os
+    _LOCAL = '/data/datasets/wikitext-2-raw-v1'
+    if os.path.isdir(_LOCAL):
+        traindata = load_dataset('parquet', data_files={'train': f'{_LOCAL}/train-0000.parquet'}, split='train')
+        testdata  = load_dataset('parquet', data_files={'test':  f'{_LOCAL}/test-0000.parquet'},  split='test')
+    else:
+        traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
+        testdata  = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
 
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
