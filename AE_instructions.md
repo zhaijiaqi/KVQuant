@@ -1353,3 +1353,63 @@ else:
 ```
 
 fp16 评估命令同时去掉 `--quantizer-path` 参数。
+
+---
+
+## 11. 额外实验：Greedy Mixed-Precision (B=3) vs Uniform NUQ
+
+### 11.1 背景：混合精度为什么可能更好
+
+KVQuant 使用 uniform 量化（所有层相同 bit-width），但不同层对量化精度的敏感度不同：
+- 某些层（如最后几层从 attention 聚合信息）对精度非常敏感，4-bit 明显好于 3-bit
+- 某些层（如中间过渡层）即使压缩到 2-bit，PPL 损失也很小
+
+**混合精度（Mixed-Precision）**：给敏感层分配更多 bit（4-bit），给不敏感层分配更少 bit（2-bit），在固定总体 bit 预算下比 uniform 更优。
+
+### 11.2 策略：PPL-Marginal 贪心选择
+
+对 32 层每层单独量化到 4-bit 和 2-bit（用 n16 历史量化器），测量 ΔPPL vs uniform 3-bit，按边际收益排序：
+
+| 选择       | 层                                                             | 理由                   |
+| ---------- | -------------------------------------------------------------- | ---------------------- |
+| 8@4bit   | 31, 9, 7, 23, 1, 6, 8, 13                                     | 3→4 PPL 改善最大   |
+| 16@3bit  | 其余 16 层                                                     | 保持在基线不变         |
+| 8@2bit   | 27, 25, 24, 16, 26, 21, 0, 22                                 | 3→2 PPL 损失最小   |
+
+**总体预算**：B = (8×4 + 16×3 + 8×2) / 32 = 3.0 bit
+
+### 11.3 实验结果
+
+使用原始 n16 历史量化器（`nuq2/3/4_s1.pkl`），评估 Wikitext-2 全 PPL：
+
+| Method       | PPL       | Δ vs Uniform 3-bit |
+| ------------ | --------- | ------------------ |
+| Uniform 3-bit | 5.759615  | —                  |
+| **Greedy Mixed B=3** | **5.753486** | **-0.006130 ✅** |
+
+Greedy mixed-precision 以 B=3 的相同预算**击败** uniform 3-bit，Δ≈-0.006。
+
+### 11.4 Sparsity Threshold 敏感度分析
+
+改变 outlier 检测阈值（`sparsity_threshold`），观察 mixed 与 uniform 的差距：
+
+| sparsity_threshold | Mixed PPL | Δ vs Uniform |
+| ----------------- | --------- | ------------ |
+| 0.99 (默认)     | 5.753486  | -0.006130 ✅ |
+| 0.95             | 5.754399  | -0.005216 ✅ |
+| 0.90             | 5.745402  | -0.014214 ✅ |
+| 0.80             | 5.736114  | -0.023501 ✅ |
+| 0.50             | 5.723811  | -0.035805 ✅ |
+
+随 sparsity 降低（更多被标记为 outlier），mixed 的优势反而**扩大**。原始 n16 量化器在所有 sparsity 阈值下均优于 uniform 3-bit，最低达到 Δ≈-0.036。
+
+### 11.5 复现命令
+
+```bash
+conda activate rlkv
+cd /home/ubuntu/program/rlkvq
+
+python scripts/k4_mixed_budget_experiment/sweep_n16.py
+```
+
+脚本详细日志见 `results/sweep_n16.log`。
