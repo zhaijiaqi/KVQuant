@@ -5,10 +5,29 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.random.manual_seed(seed)
 
-def get_wikitext2(nsamples, seed, seqlen, model):
+def _load_local_or_remote_wikitext():
     from datasets import load_dataset
+    from pathlib import Path
+    import pandas as pd
+
+    candidates = [
+        Path("/data/ud202381438/datasets/wikitext-2-raw-v1"),
+        Path("/data/datasets/wikitext-2-raw-v1"),
+    ]
+    for local_dir in candidates:
+        train_file = local_dir / "train-0000.parquet"
+        test_file = local_dir / "test-0000.parquet"
+        if train_file.exists() and test_file.exists():
+            traindata = {"text": pd.read_parquet(train_file)["text"].astype(str).tolist()}
+            testdata = {"text": pd.read_parquet(test_file)["text"].astype(str).tolist()}
+            return traindata, testdata
+
     traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
     testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+    return traindata, testdata
+
+def get_wikitext2(nsamples, seed, seqlen, model):
+    traindata, testdata = _load_local_or_remote_wikitext()
 
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)

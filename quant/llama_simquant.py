@@ -1,4 +1,5 @@
 import time
+import inspect
 
 import torch
 import torch.nn as nn
@@ -19,6 +20,69 @@ import json
 
 import math
 import argparse
+import re
+
+
+def _layer_set(values):
+    if values is None:
+        return None
+    return set(values)
+
+
+def _infer_value_pertoken_layers(args, num_hidden_layers):
+    if args.value_pertoken_layers is not None:
+        return set(args.value_pertoken_layers)
+    blocked = set(args.value_perchannel_layers or []) | set(args.value_tile_layers or [])
+    return {idx for idx in range(num_hidden_layers) if idx not in blocked}
+
+
+def _validate_value_layer_policy(args, num_hidden_layers):
+    perchannel = set(args.value_perchannel_layers or [])
+    tile = set(args.value_tile_layers or [])
+    pertoken = _infer_value_pertoken_layers(args, num_hidden_layers)
+
+    overlaps = (perchannel & tile) | (perchannel & pertoken) | (tile & pertoken)
+    if overlaps:
+        raise ValueError(f'Overlapping value-layer policy assignments: {sorted(overlaps)}')
+
+    all_layers = perchannel | tile | pertoken
+    invalid = sorted(idx for idx in all_layers if idx < 0 or idx >= num_hidden_layers)
+    if invalid:
+        raise ValueError(f'Value-layer policy contains invalid layer indices: {invalid}')
+
+    missing = sorted(set(range(num_hidden_layers)) - all_layers)
+    if missing:
+        raise ValueError(f'Value-layer policy does not cover all layers: {missing}')
+
+    args._value_perchannel_layers = perchannel
+    args._value_tile_layers = tile
+    args._value_pertoken_layers = pertoken
+
+
+def _classify_quant_target(name, layer_idx, args):
+    if 'v_proj' in name:
+        if layer_idx in args._value_tile_layers:
+            return 'tile'
+        if layer_idx in args._value_perchannel_layers:
+            return 'perchannel'
+        if layer_idx in args._value_pertoken_layers:
+            return 'pertoken'
+        return None
+
+    for pattern in args.perchannel:
+        if pattern in name:
+            return 'perchannel'
+    for pattern in args.pertoken:
+        if pattern in name:
+            return 'pertoken'
+    return None
+
+
+def _layer_idx_from_quantizer_key(name):
+    match = re.search(r'model\\.layers\\.(\\d+)\\.', name)
+    if match is None:
+        raise ValueError(f'Unable to parse layer index from quantizer key: {name}')
+    return int(match.group(1))
 
 def get_model(model, seqlen, maxseqlen):
     import torch
@@ -38,7 +102,22 @@ def get_model(model, seqlen, maxseqlen):
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
 
     from transformers import AutoModelForCausalLM
-    model = AutoModelForCausalLM.from_pretrained(model, config=config, trust_remote_code=True, use_flash_attention_2=True, torch_dtype=torch.half)
+    if hasattr(config, "_flash_attn_2_enabled"):
+        config._flash_attn_2_enabled = False
+
+    load_kwargs = {
+        "config": config,
+        "trust_remote_code": True,
+        "torch_dtype": torch.half,
+    }
+    if "attn_implementation" in inspect.signature(AutoModelForCausalLM.from_pretrained).parameters:
+        load_kwargs["attn_implementation"] = "eager"
+
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model, **load_kwargs)
+    except TypeError:
+        load_kwargs.pop("attn_implementation", None)
+        model = AutoModelForCausalLM.from_pretrained(model, **load_kwargs)
 
     model.seqlen = seqlen  #TODO
     if config.vocab_size == 32001:
@@ -59,6 +138,10 @@ def llama_eval(model, testenc, dev):
     embeddings = get_embedding(model, model_type)
     for i in range(len(embeddings)):
         embeddings[i] = embeddings[i].to(dev)
+    rotary_emb = None
+    if model_type == 'llama' and hasattr(model.model, 'rotary_emb'):
+        rotary_emb = model.model.rotary_emb.to(dev)
+        model.model.rotary_emb = rotary_emb
     layers[0] = layers[0].to(dev)
 
     dtype = next(iter(model.parameters())).dtype
@@ -91,6 +174,8 @@ def llama_eval(model, testenc, dev):
     layers[0] = layers[0].cpu()
     for i in range(len(embeddings)):
         embeddings[i] = embeddings[i].cpu()
+    if rotary_emb is not None:
+        model.model.rotary_emb = model.model.rotary_emb.cpu()
     torch.cuda.empty_cache()
 
     outs = torch.zeros_like(inps)
@@ -155,6 +240,10 @@ def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match,
 
     model.model.embed_tokens = model.model.embed_tokens.to(dev)
     model.model.norm = model.model.norm.to(dev)
+    rotary_emb = None
+    if hasattr(model.model, 'rotary_emb'):
+        rotary_emb = model.model.rotary_emb.to(dev)
+        model.model.rotary_emb = rotary_emb
     layers[0] = layers[0].to(dev)
 
     dtype = next(iter(model.parameters())).dtype
@@ -184,6 +273,8 @@ def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match,
     layers[0] = layers[0].cpu()
     model.model.embed_tokens = model.model.embed_tokens.cpu()
     model.model.norm = model.model.norm.cpu()
+    if rotary_emb is not None:
+        model.model.rotary_emb = model.model.rotary_emb.cpu()
     torch.cuda.empty_cache()
 
     outs = torch.zeros_like(inps)
@@ -200,17 +291,20 @@ def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match,
 
         perchannel_list = []
         pertensor_list = []
+        tile_list = []
         full_list = []
 
         for f in full:
-            for p in perchannel_match:
-                if p in f:
-                    perchannel_list.append(f)
-                    full_list.append(f)
-            for p in pertensor_match:
-                if p in f:
-                    pertensor_list.append(f)
-                    full_list.append(f)
+            kind = _classify_quant_target(f, i, args)
+            if kind == 'perchannel':
+                perchannel_list.append(f)
+                full_list.append(f)
+            elif kind == 'pertoken':
+                pertensor_list.append(f)
+                full_list.append(f)
+            elif kind == 'tile':
+                tile_list.append(f)
+                full_list.append(f)
 
         sequential = list(full.keys())
 
@@ -231,6 +325,14 @@ def llama_calibration(model, dataloader, dev, perchannel_match, pertensor_match,
                                         bits,
                                         perchannel=True,
                                         qchannel=-1
+                                     )
+            elif name in tile_list:
+                simquant[name] = SimQuant(
+                                        subset[name],
+                                        bits,
+                                        perchannel=False,
+                                        qchannel=-1,
+                                        tile_size=args.value_tile_size
                                      )
             else:
                 continue
@@ -341,6 +443,22 @@ if __name__ == '__main__':
         help='Tensors to use token-wise quant.'
     )
     parser.add_argument(
+        '--value-perchannel-layers', nargs='*', type=int, default=None,
+        help='Layer indices whose Value projections use per-channel quantization.'
+    )
+    parser.add_argument(
+        '--value-tile-layers', nargs='*', type=int, default=None,
+        help='Layer indices whose Value projections use tile quantization.'
+    )
+    parser.add_argument(
+        '--value-pertoken-layers', nargs='*', type=int, default=None,
+        help='Layer indices whose Value projections use per-token quantization.'
+    )
+    parser.add_argument(
+        '--value-tile-size', type=int, default=32,
+        help='Tile size for tile-based Value quantization.'
+    )
+    parser.add_argument(
         '--include_sparse', action='store_true',
         help='Whether to use dense-and-sparse quantization.'
     )
@@ -411,6 +529,11 @@ if __name__ == '__main__':
         model.seqlen = args.seqlen
 
     model = model.half()
+    _validate_value_layer_policy(args, model.config.num_hidden_layers)
+    print('Value policy:')
+    print('  per-channel:', sorted(args._value_perchannel_layers))
+    print('  tile:', sorted(args._value_tile_layers))
+    print('  per-token:', sorted(args._value_pertoken_layers))
     print('Done.')
 
     # TODO: once multi-device evaluation framework is set up, at set_devices call here
@@ -479,21 +602,17 @@ if __name__ == '__main__':
         # replace layers
         perchannelquant = {}
         pertokenquant = {}
-
-        perchannel_match = args.perchannel
-        pertoken_match = args.pertoken
+        tilequant = {}
 
         for k in quantizers.keys():
-            # quantizers[k] = quantizers[k] + (-1, ) # empty for now (used to be LN params)
-
-            # filter out tensor list
-            for p in perchannel_match:
-                if p in k:
-                    perchannelquant[k] = quantizers[k]
-
-            for p in pertoken_match:
-                if p in k:
-                    pertokenquant[k] = quantizers[k]
+            layer_idx = _layer_idx_from_quantizer_key(k)
+            kind = _classify_quant_target(k, layer_idx, args)
+            if kind == 'perchannel':
+                perchannelquant[k] = quantizers[k]
+            elif kind == 'pertoken':
+                pertokenquant[k] = quantizers[k]
+            elif kind == 'tile':
+                tilequant[k] = quantizers[k]
 
         #per-vector quant
         make_quant_sim(
@@ -512,7 +631,7 @@ if __name__ == '__main__':
             clamp=args.clamp
         )
 
-        #per-vector quant
+        #per-token quant
         make_quant_sim(
             model,
             pertokenquant,
@@ -527,6 +646,24 @@ if __name__ == '__main__':
             cap_outliers=args.cap_outliers,
             first_few_fp16=args.first_few_fp16,
             clamp=args.clamp
+        )
+
+        #tile quant
+        make_quant_sim(
+            model,
+            tilequant,
+            args.abits,
+            perchannel=False,
+            include_sparse=args.include_sparse,
+            sparsity_threshold=args.sparsity_threshold,
+            dynamicquantization=True,
+            nuq=args.nuq,
+            nf_nuq=args.nf,
+            norm=args.norm,
+            cap_outliers=args.cap_outliers,
+            first_few_fp16=args.first_few_fp16,
+            clamp=args.clamp,
+            tile_size=args.value_tile_size
         )
 
         #run evaluation

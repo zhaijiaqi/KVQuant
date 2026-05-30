@@ -1,0 +1,224 @@
+SWEEP_N16
+The model was loaded with use_flash_attention_2=True, which is deprecated and may be removed in a future release. Please use `attn_implementation="flash_attention_2"` instead.
+Loading checkpoint shards:   0%|          | 0/33 [00:00<?, ?it/s]Loading checkpoint shards:   3%|▎         | 1/33 [00:00<00:05,  5.79it/s]Loading checkpoint shards:   6%|▌         | 2/33 [00:00<00:05,  5.52it/s]Loading checkpoint shards:   9%|▉         | 3/33 [00:00<00:05,  5.72it/s]Loading checkpoint shards:  12%|█▏        | 4/33 [00:00<00:05,  5.52it/s]Loading checkpoint shards:  15%|█▌        | 5/33 [00:00<00:05,  5.49it/s]Loading checkpoint shards:  18%|█▊        | 6/33 [00:01<00:05,  5.37it/s]Loading checkpoint shards:  21%|██        | 7/33 [00:01<00:04,  5.30it/s]Loading checkpoint shards:  24%|██▍       | 8/33 [00:01<00:04,  5.11it/s]Loading checkpoint shards:  27%|██▋       | 9/33 [00:01<00:04,  5.10it/s]Loading checkpoint shards:  30%|███       | 10/33 [00:01<00:04,  5.17it/s]Loading checkpoint shards:  33%|███▎      | 11/33 [00:02<00:04,  5.33it/s]Loading checkpoint shards:  36%|███▋      | 12/33 [00:02<00:03,  5.50it/s]Loading checkpoint shards:  39%|███▉      | 13/33 [00:02<00:03,  5.60it/s]Loading checkpoint shards:  42%|████▏     | 14/33 [00:02<00:03,  5.66it/s]Loading checkpoint shards:  45%|████▌     | 15/33 [00:02<00:03,  5.55it/s]Loading checkpoint shards:  48%|████▊     | 16/33 [00:02<00:03,  5.46it/s]Loading checkpoint shards:  52%|█████▏    | 17/33 [00:03<00:02,  5.51it/s]Loading checkpoint shards:  55%|█████▍    | 18/33 [00:03<00:02,  5.52it/s]Loading checkpoint shards:  58%|█████▊    | 19/33 [00:03<00:02,  5.53it/s]Loading checkpoint shards:  61%|██████    | 20/33 [00:03<00:02,  5.44it/s]Loading checkpoint shards:  64%|██████▎   | 21/33 [00:03<00:02,  5.46it/s]Loading checkpoint shards:  67%|██████▋   | 22/33 [00:04<00:02,  5.44it/s]Loading checkpoint shards:  70%|██████▉   | 23/33 [00:04<00:01,  5.41it/s]Loading checkpoint shards:  73%|███████▎  | 24/33 [00:04<00:01,  5.41it/s]Loading checkpoint shards:  76%|███████▌  | 25/33 [00:04<00:01,  5.64it/s]Loading checkpoint shards:  79%|███████▉  | 26/33 [00:04<00:01,  5.59it/s]Loading checkpoint shards:  82%|████████▏ | 27/33 [00:04<00:01,  5.67it/s]Loading checkpoint shards:  85%|████████▍ | 28/33 [00:05<00:00,  5.64it/s]Loading checkpoint shards:  88%|████████▊ | 29/33 [00:05<00:00,  5.54it/s]Loading checkpoint shards:  91%|█████████ | 30/33 [00:05<00:00,  5.72it/s]Loading checkpoint shards:  94%|█████████▍| 31/33 [00:05<00:00,  5.62it/s]Loading checkpoint shards:  97%|█████████▋| 32/33 [00:05<00:00,  5.46it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:06<00:00,  5.29it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:06<00:00,  5.46it/s]
+/home/ubuntu/program/rlkvq/kvquant/quant/kvquant/simquant_module_quantizer.py:861: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  self.outlier_threshold_upper = torch.tensor(quantizer[0]).cuda().flatten().half()
+/home/ubuntu/program/rlkvq/kvquant/quant/kvquant/simquant_module_quantizer.py:862: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  self.outlier_threshold_lower = torch.tensor(quantizer[1]).cuda().flatten().half()
+You are using the default legacy behaviour of the <class 'transformers.models.llama.tokenization_llama.LlamaTokenizer'>. This is expected, and simply means that the `legacy` (previous) behavior will be used so nothing changes for you. If you want to use the new behaviour, set `legacy=False`. This should only be set if you understand what it means, and thoroughly read the reason why this was added as explained in https://github.com/huggingface/transformers/pull/24565
+Evaluating ...
+Layer 0
+Layer 1
+Layer 2
+Layer 3
+Layer 4
+Layer 5
+Layer 6
+Layer 7
+Layer 8
+Layer 9
+Layer 10
+Layer 11
+Layer 12
+Layer 13
+Layer 14
+Layer 15
+Layer 16
+Layer 17
+Layer 18
+Layer 19
+Layer 20
+Layer 21
+Layer 22
+Layer 23
+Layer 24
+Layer 25
+Layer 26
+Layer 27
+Layer 28
+Layer 29
+Layer 30
+Layer 31
+5.759615421295166
+U 0.99: 5.759615 (365.5s)
+Loading checkpoint shards:   0%|          | 0/33 [00:00<?, ?it/s]Loading checkpoint shards:   3%|▎         | 1/33 [00:00<00:07,  4.39it/s]Loading checkpoint shards:   6%|▌         | 2/33 [00:00<00:06,  4.46it/s]Loading checkpoint shards:   9%|▉         | 3/33 [00:00<00:06,  4.53it/s]Loading checkpoint shards:  12%|█▏        | 4/33 [00:00<00:06,  4.48it/s]Loading checkpoint shards:  15%|█▌        | 5/33 [00:01<00:06,  4.53it/s]Loading checkpoint shards:  18%|█▊        | 6/33 [00:01<00:05,  4.52it/s]Loading checkpoint shards:  21%|██        | 7/33 [00:01<00:05,  4.57it/s]Loading checkpoint shards:  24%|██▍       | 8/33 [00:01<00:05,  4.55it/s]Loading checkpoint shards:  27%|██▋       | 9/33 [00:01<00:05,  4.50it/s]Loading checkpoint shards:  30%|███       | 10/33 [00:02<00:05,  4.48it/s]Loading checkpoint shards:  33%|███▎      | 11/33 [00:02<00:04,  4.43it/s]Loading checkpoint shards:  36%|███▋      | 12/33 [00:02<00:04,  4.43it/s]Loading checkpoint shards:  39%|███▉      | 13/33 [00:02<00:04,  4.56it/s]Loading checkpoint shards:  42%|████▏     | 14/33 [00:03<00:04,  4.58it/s]Loading checkpoint shards:  45%|████▌     | 15/33 [00:03<00:03,  4.58it/s]Loading checkpoint shards:  48%|████▊     | 16/33 [00:03<00:03,  4.73it/s]Loading checkpoint shards:  52%|█████▏    | 17/33 [00:03<00:03,  4.63it/s]Loading checkpoint shards:  55%|█████▍    | 18/33 [00:03<00:03,  4.61it/s]Loading checkpoint shards:  58%|█████▊    | 19/33 [00:04<00:03,  4.60it/s]Loading checkpoint shards:  61%|██████    | 20/33 [00:04<00:02,  4.56it/s]Loading checkpoint shards:  64%|██████▎   | 21/33 [00:04<00:02,  4.47it/s]Loading checkpoint shards:  67%|██████▋   | 22/33 [00:04<00:02,  4.56it/s]Loading checkpoint shards:  70%|██████▉   | 23/33 [00:05<00:02,  4.56it/s]Loading checkpoint shards:  73%|███████▎  | 24/33 [00:05<00:01,  4.58it/s]Loading checkpoint shards:  76%|███████▌  | 25/33 [00:05<00:01,  4.57it/s]Loading checkpoint shards:  79%|███████▉  | 26/33 [00:05<00:01,  4.50it/s]Loading checkpoint shards:  82%|████████▏ | 27/33 [00:05<00:01,  4.48it/s]Loading checkpoint shards:  85%|████████▍ | 28/33 [00:06<00:01,  4.49it/s]Loading checkpoint shards:  88%|████████▊ | 29/33 [00:06<00:00,  4.45it/s]Loading checkpoint shards:  91%|█████████ | 30/33 [00:06<00:00,  4.38it/s]Loading checkpoint shards:  94%|█████████▍| 31/33 [00:06<00:00,  4.40it/s]Loading checkpoint shards:  97%|█████████▋| 32/33 [00:07<00:00,  4.42it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:07<00:00,  4.41it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:07<00:00,  4.51it/s]
+Evaluating ...
+Layer 0
+Layer 1
+Layer 2
+Layer 3
+Layer 4
+Layer 5
+Layer 6
+Layer 7
+Layer 8
+Layer 9
+Layer 10
+Layer 11
+Layer 12
+Layer 13
+Layer 14
+Layer 15
+Layer 16
+Layer 17
+Layer 18
+Layer 19
+Layer 20
+Layer 21
+Layer 22
+Layer 23
+Layer 24
+Layer 25
+Layer 26
+Layer 27
+Layer 28
+Layer 29
+Layer 30
+Layer 31
+5.753485679626465
+M 0.990: 5.753486 d=-0.006130 (358.9s) BETTER
+Loading checkpoint shards:   0%|          | 0/33 [00:00<?, ?it/s]Loading checkpoint shards:   3%|▎         | 1/33 [00:00<00:06,  4.69it/s]Loading checkpoint shards:   6%|▌         | 2/33 [00:00<00:06,  4.62it/s]Loading checkpoint shards:   9%|▉         | 3/33 [00:00<00:06,  4.52it/s]Loading checkpoint shards:  12%|█▏        | 4/33 [00:00<00:06,  4.43it/s]Loading checkpoint shards:  15%|█▌        | 5/33 [00:01<00:06,  4.47it/s]Loading checkpoint shards:  18%|█▊        | 6/33 [00:01<00:06,  4.37it/s]Loading checkpoint shards:  21%|██        | 7/33 [00:01<00:05,  4.52it/s]Loading checkpoint shards:  24%|██▍       | 8/33 [00:01<00:05,  4.46it/s]Loading checkpoint shards:  27%|██▋       | 9/33 [00:01<00:05,  4.55it/s]Loading checkpoint shards:  30%|███       | 10/33 [00:02<00:05,  4.51it/s]Loading checkpoint shards:  33%|███▎      | 11/33 [00:02<00:04,  4.41it/s]Loading checkpoint shards:  36%|███▋      | 12/33 [00:02<00:04,  4.37it/s]Loading checkpoint shards:  39%|███▉      | 13/33 [00:02<00:04,  4.41it/s]Loading checkpoint shards:  42%|████▏     | 14/33 [00:03<00:04,  4.42it/s]Loading checkpoint shards:  45%|████▌     | 15/33 [00:03<00:04,  4.44it/s]Loading checkpoint shards:  48%|████▊     | 16/33 [00:03<00:03,  4.42it/s]Loading checkpoint shards:  52%|█████▏    | 17/33 [00:03<00:03,  4.47it/s]Loading checkpoint shards:  55%|█████▍    | 18/33 [00:04<00:03,  4.50it/s]Loading checkpoint shards:  58%|█████▊    | 19/33 [00:04<00:03,  4.50it/s]Loading checkpoint shards:  61%|██████    | 20/33 [00:04<00:02,  4.44it/s]Loading checkpoint shards:  64%|██████▎   | 21/33 [00:04<00:02,  4.43it/s]Loading checkpoint shards:  67%|██████▋   | 22/33 [00:04<00:02,  4.35it/s]Loading checkpoint shards:  70%|██████▉   | 23/33 [00:05<00:02,  4.37it/s]Loading checkpoint shards:  73%|███████▎  | 24/33 [00:05<00:02,  4.38it/s]Loading checkpoint shards:  76%|███████▌  | 25/33 [00:05<00:01,  4.37it/s]Loading checkpoint shards:  79%|███████▉  | 26/33 [00:05<00:01,  4.39it/s]Loading checkpoint shards:  82%|████████▏ | 27/33 [00:06<00:01,  4.44it/s]Loading checkpoint shards:  85%|████████▍ | 28/33 [00:06<00:01,  4.36it/s]Loading checkpoint shards:  88%|████████▊ | 29/33 [00:06<00:00,  4.34it/s]Loading checkpoint shards:  91%|█████████ | 30/33 [00:06<00:00,  4.35it/s]Loading checkpoint shards:  94%|█████████▍| 31/33 [00:06<00:00,  4.44it/s]Loading checkpoint shards:  97%|█████████▋| 32/33 [00:07<00:00,  4.50it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:07<00:00,  4.43it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:07<00:00,  4.43it/s]
+Evaluating ...
+Layer 0
+Layer 1
+Layer 2
+Layer 3
+Layer 4
+Layer 5
+Layer 6
+Layer 7
+Layer 8
+Layer 9
+Layer 10
+Layer 11
+Layer 12
+Layer 13
+Layer 14
+Layer 15
+Layer 16
+Layer 17
+Layer 18
+Layer 19
+Layer 20
+Layer 21
+Layer 22
+Layer 23
+Layer 24
+Layer 25
+Layer 26
+Layer 27
+Layer 28
+Layer 29
+Layer 30
+Layer 31
+5.754399299621582
+M 0.950: 5.754399 d=-0.005216 (357.1s) BETTER
+Loading checkpoint shards:   0%|          | 0/33 [00:00<?, ?it/s]Loading checkpoint shards:   3%|▎         | 1/33 [00:00<00:06,  4.75it/s]Loading checkpoint shards:   6%|▌         | 2/33 [00:00<00:06,  4.58it/s]Loading checkpoint shards:   9%|▉         | 3/33 [00:00<00:06,  4.51it/s]Loading checkpoint shards:  12%|█▏        | 4/33 [00:00<00:06,  4.54it/s]Loading checkpoint shards:  15%|█▌        | 5/33 [00:01<00:06,  4.54it/s]Loading checkpoint shards:  18%|█▊        | 6/33 [00:01<00:05,  4.53it/s]Loading checkpoint shards:  21%|██        | 7/33 [00:01<00:05,  4.50it/s]Loading checkpoint shards:  24%|██▍       | 8/33 [00:01<00:05,  4.45it/s]Loading checkpoint shards:  27%|██▋       | 9/33 [00:01<00:05,  4.52it/s]Loading checkpoint shards:  30%|███       | 10/33 [00:02<00:05,  4.53it/s]Loading checkpoint shards:  33%|███▎      | 11/33 [00:02<00:04,  4.51it/s]Loading checkpoint shards:  36%|███▋      | 12/33 [00:02<00:04,  4.53it/s]Loading checkpoint shards:  39%|███▉      | 13/33 [00:02<00:04,  4.53it/s]Loading checkpoint shards:  42%|████▏     | 14/33 [00:03<00:04,  4.50it/s]Loading checkpoint shards:  45%|████▌     | 15/33 [00:03<00:03,  4.57it/s]Loading checkpoint shards:  48%|████▊     | 16/33 [00:03<00:03,  4.56it/s]Loading checkpoint shards:  52%|█████▏    | 17/33 [00:03<00:03,  4.49it/s]Loading checkpoint shards:  55%|█████▍    | 18/33 [00:03<00:03,  4.41it/s]Loading checkpoint shards:  58%|█████▊    | 19/33 [00:04<00:03,  4.37it/s]Loading checkpoint shards:  61%|██████    | 20/33 [00:04<00:02,  4.41it/s]Loading checkpoint shards:  64%|██████▎   | 21/33 [00:04<00:02,  4.36it/s]Loading checkpoint shards:  67%|██████▋   | 22/33 [00:04<00:02,  4.40it/s]Loading checkpoint shards:  70%|██████▉   | 23/33 [00:05<00:02,  4.47it/s]Loading checkpoint shards:  73%|███████▎  | 24/33 [00:05<00:02,  4.49it/s]Loading checkpoint shards:  76%|███████▌  | 25/33 [00:05<00:01,  4.55it/s]Loading checkpoint shards:  79%|███████▉  | 26/33 [00:05<00:01,  4.58it/s]Loading checkpoint shards:  82%|████████▏ | 27/33 [00:05<00:01,  4.57it/s]Loading checkpoint shards:  85%|████████▍ | 28/33 [00:06<00:01,  4.59it/s]Loading checkpoint shards:  88%|████████▊ | 29/33 [00:06<00:00,  4.59it/s]Loading checkpoint shards:  91%|█████████ | 30/33 [00:06<00:00,  4.57it/s]Loading checkpoint shards:  94%|█████████▍| 31/33 [00:06<00:00,  4.63it/s]Loading checkpoint shards:  97%|█████████▋| 32/33 [00:07<00:00,  4.68it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:07<00:00,  4.53it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:07<00:00,  4.52it/s]
+Evaluating ...
+Layer 0
+Layer 1
+Layer 2
+Layer 3
+Layer 4
+Layer 5
+Layer 6
+Layer 7
+Layer 8
+Layer 9
+Layer 10
+Layer 11
+Layer 12
+Layer 13
+Layer 14
+Layer 15
+Layer 16
+Layer 17
+Layer 18
+Layer 19
+Layer 20
+Layer 21
+Layer 22
+Layer 23
+Layer 24
+Layer 25
+Layer 26
+Layer 27
+Layer 28
+Layer 29
+Layer 30
+Layer 31
+5.745401859283447
+M 0.900: 5.745402 d=-0.014214 (358.7s) BETTER
+Loading checkpoint shards:   0%|          | 0/33 [00:00<?, ?it/s]Loading checkpoint shards:   3%|▎         | 1/33 [00:00<00:06,  4.61it/s]Loading checkpoint shards:   6%|▌         | 2/33 [00:00<00:06,  4.86it/s]Loading checkpoint shards:   9%|▉         | 3/33 [00:00<00:06,  4.97it/s]Loading checkpoint shards:  12%|█▏        | 4/33 [00:00<00:05,  4.99it/s]Loading checkpoint shards:  15%|█▌        | 5/33 [00:01<00:05,  4.85it/s]Loading checkpoint shards:  18%|█▊        | 6/33 [00:01<00:05,  4.77it/s]Loading checkpoint shards:  21%|██        | 7/33 [00:01<00:05,  4.75it/s]Loading checkpoint shards:  24%|██▍       | 8/33 [00:01<00:05,  4.73it/s]Loading checkpoint shards:  27%|██▋       | 9/33 [00:01<00:05,  4.67it/s]Loading checkpoint shards:  30%|███       | 10/33 [00:02<00:04,  4.61it/s]Loading checkpoint shards:  33%|███▎      | 11/33 [00:02<00:04,  4.75it/s]Loading checkpoint shards:  36%|███▋      | 12/33 [00:02<00:04,  4.74it/s]Loading checkpoint shards:  39%|███▉      | 13/33 [00:02<00:04,  4.78it/s]Loading checkpoint shards:  42%|████▏     | 14/33 [00:02<00:04,  4.74it/s]Loading checkpoint shards:  45%|████▌     | 15/33 [00:03<00:03,  4.69it/s]Loading checkpoint shards:  48%|████▊     | 16/33 [00:03<00:03,  4.75it/s]Loading checkpoint shards:  52%|█████▏    | 17/33 [00:03<00:03,  4.61it/s]Loading checkpoint shards:  55%|█████▍    | 18/33 [00:03<00:03,  4.61it/s]Loading checkpoint shards:  58%|█████▊    | 19/33 [00:04<00:02,  4.71it/s]Loading checkpoint shards:  61%|██████    | 20/33 [00:04<00:02,  4.67it/s]Loading checkpoint shards:  64%|██████▎   | 21/33 [00:04<00:02,  4.80it/s]Loading checkpoint shards:  67%|██████▋   | 22/33 [00:04<00:02,  4.88it/s]Loading checkpoint shards:  70%|██████▉   | 23/33 [00:04<00:02,  4.79it/s]Loading checkpoint shards:  73%|███████▎  | 24/33 [00:05<00:01,  4.75it/s]Loading checkpoint shards:  76%|███████▌  | 25/33 [00:05<00:01,  4.86it/s]Loading checkpoint shards:  79%|███████▉  | 26/33 [00:05<00:01,  4.86it/s]Loading checkpoint shards:  82%|████████▏ | 27/33 [00:05<00:01,  4.96it/s]Loading checkpoint shards:  85%|████████▍ | 28/33 [00:05<00:00,  5.03it/s]Loading checkpoint shards:  88%|████████▊ | 29/33 [00:06<00:00,  5.06it/s]Loading checkpoint shards:  91%|█████████ | 30/33 [00:06<00:00,  4.98it/s]Loading checkpoint shards:  94%|█████████▍| 31/33 [00:06<00:00,  4.95it/s]Loading checkpoint shards:  97%|█████████▋| 32/33 [00:06<00:00,  4.96it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:06<00:00,  4.73it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:06<00:00,  4.79it/s]
+Evaluating ...
+Layer 0
+Layer 1
+Layer 2
+Layer 3
+Layer 4
+Layer 5
+Layer 6
+Layer 7
+Layer 8
+Layer 9
+Layer 10
+Layer 11
+Layer 12
+Layer 13
+Layer 14
+Layer 15
+Layer 16
+Layer 17
+Layer 18
+Layer 19
+Layer 20
+Layer 21
+Layer 22
+Layer 23
+Layer 24
+Layer 25
+Layer 26
+Layer 27
+Layer 28
+Layer 29
+Layer 30
+Layer 31
+5.736114025115967
+M 0.800: 5.736114 d=-0.023501 (361.1s) BETTER
+Loading checkpoint shards:   0%|          | 0/33 [00:00<?, ?it/s]Loading checkpoint shards:   3%|▎         | 1/33 [00:00<00:07,  4.56it/s]Loading checkpoint shards:   6%|▌         | 2/33 [00:00<00:06,  4.47it/s]Loading checkpoint shards:   9%|▉         | 3/33 [00:00<00:06,  4.54it/s]Loading checkpoint shards:  12%|█▏        | 4/33 [00:00<00:06,  4.45it/s]Loading checkpoint shards:  15%|█▌        | 5/33 [00:01<00:06,  4.46it/s]Loading checkpoint shards:  18%|█▊        | 6/33 [00:01<00:06,  4.50it/s]Loading checkpoint shards:  21%|██        | 7/33 [00:01<00:05,  4.55it/s]Loading checkpoint shards:  24%|██▍       | 8/33 [00:01<00:05,  4.52it/s]Loading checkpoint shards:  27%|██▋       | 9/33 [00:02<00:05,  4.45it/s]Loading checkpoint shards:  30%|███       | 10/33 [00:02<00:05,  4.41it/s]Loading checkpoint shards:  33%|███▎      | 11/33 [00:02<00:04,  4.42it/s]Loading checkpoint shards:  36%|███▋      | 12/33 [00:02<00:04,  4.37it/s]Loading checkpoint shards:  39%|███▉      | 13/33 [00:02<00:04,  4.50it/s]Loading checkpoint shards:  42%|████▏     | 14/33 [00:03<00:04,  4.48it/s]Loading checkpoint shards:  45%|████▌     | 15/33 [00:03<00:03,  4.50it/s]Loading checkpoint shards:  48%|████▊     | 16/33 [00:03<00:03,  4.59it/s]Loading checkpoint shards:  52%|█████▏    | 17/33 [00:03<00:03,  4.58it/s]Loading checkpoint shards:  55%|█████▍    | 18/33 [00:04<00:03,  4.53it/s]Loading checkpoint shards:  58%|█████▊    | 19/33 [00:04<00:03,  4.48it/s]Loading checkpoint shards:  61%|██████    | 20/33 [00:04<00:02,  4.43it/s]Loading checkpoint shards:  64%|██████▎   | 21/33 [00:04<00:02,  4.47it/s]Loading checkpoint shards:  67%|██████▋   | 22/33 [00:04<00:02,  4.55it/s]Loading checkpoint shards:  70%|██████▉   | 23/33 [00:05<00:02,  4.54it/s]Loading checkpoint shards:  73%|███████▎  | 24/33 [00:05<00:01,  4.54it/s]Loading checkpoint shards:  76%|███████▌  | 25/33 [00:05<00:01,  4.52it/s]Loading checkpoint shards:  79%|███████▉  | 26/33 [00:05<00:01,  4.56it/s]Loading checkpoint shards:  82%|████████▏ | 27/33 [00:05<00:01,  4.61it/s]Loading checkpoint shards:  85%|████████▍ | 28/33 [00:06<00:01,  4.63it/s]Loading checkpoint shards:  88%|████████▊ | 29/33 [00:06<00:00,  4.59it/s]Loading checkpoint shards:  91%|█████████ | 30/33 [00:06<00:00,  4.68it/s]Loading checkpoint shards:  94%|█████████▍| 31/33 [00:06<00:00,  4.65it/s]Loading checkpoint shards:  97%|█████████▋| 32/33 [00:07<00:00,  4.70it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:07<00:00,  4.61it/s]Loading checkpoint shards: 100%|██████████| 33/33 [00:07<00:00,  4.53it/s]
+Evaluating ...
+Layer 0
+Layer 1
+Layer 2
+Layer 3
+Layer 4
+Layer 5
+Layer 6
+Layer 7
+Layer 8
+Layer 9
+Layer 10
+Layer 11
+Layer 12
+Layer 13
+Layer 14
+Layer 15
+Layer 16
+Layer 17
+Layer 18
+Layer 19
+Layer 20
+Layer 21
+Layer 22
+Layer 23
+Layer 24
+Layer 25
+Layer 26
+Layer 27
+Layer 28
+Layer 29
+Layer 30
+Layer 31
+5.72381067276001
+M 0.500: 5.723811 d=-0.035805 (357.5s) BETTER
+DONE
