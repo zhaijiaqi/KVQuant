@@ -111,6 +111,131 @@ def _clip_activation(inp, clip_ratio=-1, qchannel=-1, method="maxabs"):
     limit = torch.clamp(limit, min=1e-8)
     return torch.clamp(work, min=-limit, max=limit).to(inp.dtype)
 
+
+KEY_TOKEN_SCALE_STATS = {}
+
+
+def reset_key_token_scale_stats():
+    KEY_TOKEN_SCALE_STATS.clear()
+
+
+def get_key_token_scale_stats():
+    result = {}
+    for name, stat in KEY_TOKEN_SCALE_STATS.items():
+        count = max(1, int(stat["count"]))
+        cv_count = max(1, int(stat.get("cv_count", 0)))
+        result[name] = {
+            "count": int(stat["count"]),
+            "norm_mean": float(stat["norm_sum"] / count),
+            "norm_min": float(stat["norm_min"]),
+            "norm_max": float(stat["norm_max"]),
+            "scale_mean": float(stat["scale_sum"] / count),
+            "scale_min": float(stat["scale_min"]),
+            "scale_max": float(stat["scale_max"]),
+            "norm_cv_mean": float(stat.get("norm_cv_sum", 0.0) / cv_count),
+            "nan_count": int(stat.get("nan_count", 0)),
+            "inf_count": int(stat.get("inf_count", 0)),
+        }
+    return result
+
+
+def _accum_key_token_scale_stats(name, norm, scale, valid_mask):
+    work_norm = norm.detach().float()
+    work_scale = scale.detach().float()
+    valid = valid_mask.detach().bool()
+    if valid.any():
+        n = work_norm[valid]
+        s = work_scale[valid]
+    else:
+        n = work_norm.reshape(-1)
+        s = work_scale.reshape(-1)
+    nan_count = torch.isnan(n).sum().item() + torch.isnan(s).sum().item()
+    inf_count = torch.isinf(n).sum().item() + torch.isinf(s).sum().item()
+    n = torch.nan_to_num(n, nan=0.0, posinf=0.0, neginf=0.0)
+    s = torch.nan_to_num(s, nan=0.0, posinf=0.0, neginf=0.0)
+    count = int(n.numel())
+    if count == 0:
+        return
+    # CV is computed per call over quantized tokens only; this is a lightweight sanity statistic.
+    mean_n = n.mean()
+    cv = (n.std(unbiased=False) / torch.clamp(mean_n.abs(), min=1e-8)).item()
+    cur = KEY_TOKEN_SCALE_STATS.setdefault(name, {
+        "count": 0,
+        "norm_sum": 0.0,
+        "norm_min": float("inf"),
+        "norm_max": float("-inf"),
+        "scale_sum": 0.0,
+        "scale_min": float("inf"),
+        "scale_max": float("-inf"),
+        "norm_cv_sum": 0.0,
+        "cv_count": 0,
+        "nan_count": 0,
+        "inf_count": 0,
+    })
+    cur["count"] += count
+    cur["norm_sum"] += float(n.sum().item())
+    cur["norm_min"] = min(cur["norm_min"], float(n.min().item()))
+    cur["norm_max"] = max(cur["norm_max"], float(n.max().item()))
+    cur["scale_sum"] += float(s.sum().item())
+    cur["scale_min"] = min(cur["scale_min"], float(s.min().item()))
+    cur["scale_max"] = max(cur["scale_max"], float(s.max().item()))
+    cur["norm_cv_sum"] += float(cv)
+    cur["cv_count"] += 1
+    cur["nan_count"] += int(nan_count)
+    cur["inf_count"] += int(inf_count)
+
+
+def _key_token_scale_mask(num_tokens, device, sink_tokens=-1, recent_tokens=-1, seq_len=2048):
+    mask = torch.ones((num_tokens,), dtype=torch.bool, device=device)
+    for start, end in _token_window_slices(num_tokens, sink_tokens, recent_tokens, seq_len):
+        mask[start:end] = False
+    return mask
+
+
+def _apply_key_token_scaling(inp, target="none", eps=1e-6, sink_tokens=-1, recent_tokens=-1, seq_len=2048, name=""):
+    if target is None or target == "none":
+        return inp, None
+    orig_dtype = inp.dtype
+    work = inp.float()
+    hidden = work.shape[-1]
+    num_tokens = work.shape[0]
+    if hidden % 128 == 0:
+        head_dim = 128
+        heads = hidden // head_dim
+    else:
+        heads = 1
+        head_dim = hidden
+    x = work.reshape(num_tokens, heads, head_dim)
+    norm = torch.sqrt(torch.sum(x * x, dim=-1, keepdim=True) + float(eps))
+    valid_mask = _key_token_scale_mask(num_tokens, work.device, sink_tokens, recent_tokens, seq_len)
+    valid_h = valid_mask[:, None, None]
+    if target == "unit":
+        target_norm = torch.ones_like(norm)
+    elif target == "mean-norm":
+        valid_count = torch.clamp(valid_h.sum().float(), min=1.0)
+        mean_norm = (norm * valid_h.float()).sum(dim=0, keepdim=True) / valid_count
+        target_norm = mean_norm.expand_as(norm)
+    else:
+        raise ValueError(f"Unknown key token scale target: {target}")
+    scale = target_norm / torch.clamp(norm, min=float(eps))
+    scale = torch.where(valid_h, scale, torch.ones_like(scale))
+    _accum_key_token_scale_stats(name, norm.squeeze(-1), scale.squeeze(-1), valid_mask[:, None].expand(-1, heads))
+    y = (x * scale).reshape_as(work)
+    return y.to(orig_dtype), scale
+
+
+def _invert_key_token_scaling(inp, scale):
+    if scale is None:
+        return inp
+    orig_dtype = inp.dtype
+    work = inp.float()
+    num_tokens, hidden = work.shape
+    heads = scale.shape[1]
+    head_dim = hidden // heads
+    x = work.reshape(num_tokens, heads, head_dim)
+    y = x / torch.clamp(scale.to(work.device, dtype=torch.float32), min=1e-8)
+    return y.reshape_as(work).to(orig_dtype)
+
 def get_outliers(
     w,
     channel=-1,
@@ -733,6 +858,8 @@ class QuantLinearSim(nn.Module):
                     clip_ratio=-1,
                     clip_method="maxabs",
                     oscar_affine=False,
+                    key_token_scale_target="none",
+                    key_token_scale_eps=1e-6,
                     cap_outliers=-1,
                     clamp=False,
                 ):
@@ -791,6 +918,8 @@ class QuantLinearSim(nn.Module):
         self.clip_ratio = clip_ratio
         self.clip_method = clip_method
         self.oscar_affine = oscar_affine
+        self.key_token_scale_target = key_token_scale_target
+        self.key_token_scale_eps = key_token_scale_eps
 
         # for normalfloat support - compute NF signposts
         if self.nf_nuq:
@@ -876,6 +1005,15 @@ class QuantLinearSim(nn.Module):
         effective_qchannel = -1 if self.oscar_affine else self.qchannel
         effective_ochannel = -1 if self.oscar_affine else self.ochannel
         y = _clip_activation(y, self.clip_ratio, qchannel=effective_qchannel, method=self.clip_method)
+        y, key_token_scale = _apply_key_token_scaling(
+            y,
+            target=self.key_token_scale_target,
+            eps=self.key_token_scale_eps,
+            sink_tokens=self.first_few_fp16,
+            recent_tokens=self.recent_fp16,
+            seq_len=self.fp16_seq_len,
+            name=self.name,
+        )
 
         # if using dense-and-sparse quantization, detect outliers in output tensor.
         # OSCAR affine clips outliers instead of preserving them sparsely.
@@ -962,6 +1100,7 @@ class QuantLinearSim(nn.Module):
                 clamp=self.clamp
             )
 
+        y = _invert_key_token_scaling(y, key_token_scale)
         y = _apply_head_rotation(y, self.rotation, transpose=True)
 
         self.weight = self.weight.cpu()
@@ -995,6 +1134,8 @@ def make_quant_sim(
                     clip_ratios=None,
                     clip_methods=None,
                     oscar_affine=False,
+                    key_token_scale_targets=None,
+                    key_token_scale_eps=1e-6,
                     clamp=False,
                   ):
     if isinstance(module, QuantLinearSim):
@@ -1002,6 +1143,7 @@ def make_quant_sim(
     rotations = rotations or {}
     clip_ratios = clip_ratios or {}
     clip_methods = clip_methods or {}
+    key_token_scale_targets = key_token_scale_targets or {}
     for attr in dir(module):
         tmp = getattr(module, attr)
         name1 = name + '.' + attr if name != '' else attr
@@ -1030,6 +1172,8 @@ def make_quant_sim(
                                                     clip_ratio=clip_ratios.get(name1, -1),
                                                     clip_method=clip_methods.get(name1, "maxabs"),
                                                     oscar_affine=oscar_affine,
+                                                    key_token_scale_target=key_token_scale_targets.get(name1, "none"),
+                                                    key_token_scale_eps=key_token_scale_eps,
                                                     clamp=clamp,
                                                 ))
         del tmp
@@ -1054,5 +1198,7 @@ def make_quant_sim(
                         clip_ratios=clip_ratios,
                         clip_methods=clip_methods,
                         oscar_affine=oscar_affine,
+                        key_token_scale_targets=key_token_scale_targets,
+                        key_token_scale_eps=key_token_scale_eps,
                         clamp=clamp
                       )
